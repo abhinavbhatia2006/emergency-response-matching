@@ -1,0 +1,150 @@
+openapi: 3.1.0
+info:
+  title: Emergency Resource Matching API
+  version: 1.0.0
+  description: Local academic demo. Matching is asynchronous. Public APIs have no authentication.
+servers:
+  - url: http://localhost:8088/api
+paths:
+  /requests:
+    get:
+      summary: List recent requests across all shards
+      parameters:
+        - {$ref: '#/components/parameters/offset'}
+        - {$ref: '#/components/parameters/limit'}
+      responses:
+        '200': {description: Request array, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Record'}}}}}
+        '400': {$ref: '#/components/responses/invalid'}
+        '503': {$ref: '#/components/responses/unavailable'}
+    post:
+      summary: Persist a request and enqueue matching through its outbox
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, location, details]
+              properties:
+                type: {$ref: '#/components/schemas/Type'}
+                location: {$ref: '#/components/schemas/Location'}
+                details: {type: string, minLength: 1, maxLength: 2000}
+                priority: {type: string, enum: [NORMAL, HIGH, CRITICAL], default: NORMAL}
+      responses:
+        '201': {description: Persisted request in PENDING, content: {application/json: {schema: {$ref: '#/components/schemas/Record'}}}}
+        '400': {$ref: '#/components/responses/invalid'}
+        '503': {$ref: '#/components/responses/unavailable'}
+  /requests/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      summary: Read request; replica fallback is explicitly labeled if used
+      responses:
+        '200': {description: Stored request, content: {application/json: {schema: {$ref: '#/components/schemas/Record'}}}}
+        '404': {description: Unknown ID}
+        '503': {$ref: '#/components/responses/unavailable'}
+  /requests/{id}/status:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    put:
+      summary: Cancel PENDING, start MATCHED, or complete IN_PROGRESS
+      requestBody: {$ref: '#/components/requestBodies/status'}
+      responses:
+        '200': {description: Updated request}
+        '409': {description: Invalid transition}
+        '404': {description: Unknown ID}
+  /resources:
+    get:
+      summary: List resources across all shards
+      parameters:
+        - {$ref: '#/components/parameters/offset'}
+        - {$ref: '#/components/parameters/limit'}
+        - {name: type, in: query, schema: {$ref: '#/components/schemas/Type'}}
+      responses:
+        '200': {description: Resource array, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Record'}}}}}
+        '400': {$ref: '#/components/responses/invalid'}
+        '503': {$ref: '#/components/responses/unavailable'}
+    post:
+      summary: Register a capacity-one resource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, location, availability]
+              properties:
+                type: {$ref: '#/components/schemas/Type'}
+                location: {$ref: '#/components/schemas/Location'}
+                description: {type: string, maxLength: 2000}
+                availability: {type: boolean}
+      responses:
+        '201': {description: Stored resource}
+        '400': {$ref: '#/components/responses/invalid'}
+  /resources/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      summary: Read a resource
+      responses:
+        '200': {description: Resource record}
+        '404': {description: Unknown ID}
+  /resources/{id}/status:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    put:
+      summary: Set an unassigned resource AVAILABLE or UNAVAILABLE
+      requestBody: {$ref: '#/components/requestBodies/status'}
+      responses:
+        '200': {description: Updated resource}
+        '409': {description: Invalid transition or assigned resource}
+        '404': {description: Unknown ID}
+  /match/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      summary: Retry a NO_RESOURCE request or report its current state
+      responses:
+        '200': {description: MATCH_QUEUED or current state; assignment may still be pending}
+        '409': {description: Cancelled request cannot be matched}
+        '404': {description: Unknown ID}
+  /ops/topology:
+    get:
+      summary: Observed database health and per-shard counts
+      responses:
+        '200': {description: Nodes, stale heartbeat flags, and shard counts}
+components:
+  parameters:
+    id: {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    offset: {name: offset, in: query, schema: {type: integer, minimum: 0, maximum: 10000, default: 0}}
+    limit: {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+  requestBodies:
+    status:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [status]
+            properties:
+              status: {type: string}
+  responses:
+    invalid: {description: Invalid type, coordinates, text or input shape}
+    unavailable: {description: A required downstream service is unavailable; retry later}
+  schemas:
+    Type: {type: string, enum: [WATER, FOOD, MEDICINE, TRANSPORT, SHELTER]}
+    Location:
+      type: object
+      required: [label, latitude, longitude]
+      properties:
+        label: {type: string, minLength: 1, maxLength: 200}
+        latitude: {type: number, minimum: -90, maximum: 90}
+        longitude: {type: number, minimum: -180, maximum: 180}
+    Record:
+      type: object
+      required: [id, type, status, location, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        type: {$ref: '#/components/schemas/Type'}
+        status: {type: string}
+        location: {$ref: '#/components/schemas/Location'}
+        createdAt: {type: string, format: date-time}
+        matchedResourceId: {type: [string, 'null'], format: uuid}
+        availability: {type: boolean}
+        readSource: {type: string, enum: [REPLICA]}
+        potentiallyStale: {type: boolean}
