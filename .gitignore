@@ -1,0 +1,38 @@
+# Local settings and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.idea/
+.vscode/
+.tools/
+# Build and dependencies
+**/target/
+**/node_modules/
+**/dist/
+**/coverage/
+# Runtime data
+*.log
+logs/
+data/
+.local/
+tmp/
+.DS_Store
+Thumbs.db
+*.tsbuildinfo
+**/__pycache__/
+
+# Local audit material and generated evidence (not part of the published project)
+docs/evidence/
+docs/professor-audit.md
+docs/implementation-progress.md
+docs/requirements-traceability.md
+docs/environment.md
+docs/phase-plan.md
+docs/test-plan.md
+docs/final-demo.md
+docs/adr/
+scripts/professor-*.mjs
+scripts/extended-*.mjs
+**/.gitkeep
