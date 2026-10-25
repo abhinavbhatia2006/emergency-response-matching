@@ -1,0 +1,18 @@
+# Build Java once on the host, then package jars with minimal Docker memory usage.
+services:
+  storage-coordinator:
+    build:
+      dockerfile: backend/Dockerfile.local
+    mem_limit: 512m
+  request-service:
+    build:
+      dockerfile: backend/Dockerfile.local
+    mem_limit: 512m
+  resource-service:
+    build:
+      dockerfile: backend/Dockerfile.local
+    mem_limit: 512m
+  matching-service:
+    build:
+      dockerfile: backend/Dockerfile.local
+    mem_limit: 512m
