@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: matching-service
+  namespace: emergency
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: matching-service}
+  template:
+    metadata:
+      labels: {app: matching-service, component: application}
+    spec:
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: matching-service
+          image: emergency/matching-service:dev
+          imagePullPolicy: IfNotPresent
+          ports: [{containerPort: 8080}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: '1', memory: 512Mi}
+          startupProbe:
+            httpGet: {path: /actuator/health/liveness, port: 8080}
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /actuator/health/readiness, port: 8080}
+          livenessProbe:
+            httpGet: {path: /actuator/health/liveness, port: 8080}
+            periodSeconds: 15
+          env:
+            - name: PORT
+              value: "8080"
+            - name: COORDINATOR_URL
+              value: "http://storage-coordinator:8080"
+            - name: RABBITMQ_HOST
+              value: "rabbitmq"
+            - name: SHARD_URLS
+              value: "jdbc:postgresql://shard-0-rw:5432/emergency,jdbc:postgresql://shard-1-rw:5432/emergency,jdbc:postgresql://shard-2-rw:5432/emergency"
+            - name: INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef: {name: application-secrets, key: INTERNAL_TOKEN}
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef: {name: application-secrets, key: DB_USER}
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: application-secrets, key: DB_PASSWORD}
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef: {name: application-secrets, key: RABBITMQ_USER}
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: application-secrets, key: RABBITMQ_PASSWORD}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: matching-service
+  namespace: emergency
+spec:
+  selector: {app: matching-service}
+  ports: [{port: 8080, targetPort: 8080}]
