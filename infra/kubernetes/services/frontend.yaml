@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: emergency
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: frontend}
+  template:
+    metadata:
+      labels: {app: frontend, component: application}
+    spec:
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: frontend
+          image: emergency/frontend:dev
+          imagePullPolicy: IfNotPresent
+          ports: [{containerPort: 8080}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: '1', memory: 512Mi}
+          startupProbe:
+            httpGet: {path: /health, port: 8080}
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /health, port: 8080}
+          livenessProbe:
+            httpGet: {path: /health, port: 8080}
+            periodSeconds: 15
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: emergency
+spec:
+  selector: {app: frontend}
+  ports: [{port: 8080, targetPort: 8080}]
