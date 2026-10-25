@@ -1,0 +1,24 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: shard-0
+  namespace: emergency
+spec:
+  instances: 2
+  # Local demo: bounded graceful shutdown; production values need workload sizing.
+  smartShutdownTimeout: 10
+  stopDelay: 60
+  switchoverDelay: 60
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.6
+  primaryUpdateStrategy: unsupervised
+  bootstrap:
+    initdb:
+      database: emergency
+      owner: emergency
+      secret:
+        name: database-credentials
+  storage:
+    size: 1Gi
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: '1', memory: 512Mi}
