@@ -1,0 +1,42 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import {randomUUID} from 'node:crypto';
+const env=Object.fromEntries((await readFile('.env','utf8')).split(/\r?\n/).filter(l=>/^[A-Z_]+=/.test(l)).map(l=>[l.slice(0,l.indexOf('=')),l.slice(l.indexOf('=')+1)]));
+const base=process.env.BASE_URL||'http://[::1]:8088/api';
+const coordinator='http://127.0.0.1:18081';
+const broker='http://127.0.0.1:15673/api';
+const auth='Basic '+Buffer.from(env.RABBITMQ_USER+':'+env.RABBITMQ_PASSWORD).toString('base64');
+const pause=ms=>new Promise(r=>setTimeout(r,ms));
+async function mq(path,body){const r=await fetch(broker+path,{method:body?'POST':'GET',headers:{Authorization:auth,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});assert.ok(r.ok,'RabbitMQ status '+r.status);return r.json();}
+const report={date:new Date().toISOString(),checks:[]};
+const denied=await fetch(coordinator+'/internal/topology');assert.equal(denied.status,403);
+const metrics=await fetch(coordinator+'/actuator/prometheus');assert.equal(metrics.status,200);assert.match(await metrics.text(),/jvm_memory_used_bytes/);
+report.checks.push('Internal token enforced; Prometheus JVM metrics available');
+const nodeId='synthetic-ttl-'+randomUUID();
+const registered=await fetch(coordinator+'/internal/nodes/register',{method:'POST',headers:{'Content-Type':'application/json','X-Internal-Token':env.INTERNAL_TOKEN},body:JSON.stringify({nodeId,shard:0,role:'UNKNOWN',healthy:false,lagBytes:-1})});assert.equal(registered.status,200);
+const invalidNode=await fetch(coordinator+'/internal/nodes/heartbeat',{method:'POST',headers:{'Content-Type':'application/json','X-Internal-Token':env.INTERNAL_TOKEN},body:JSON.stringify({nodeId:'invalid-fixture',shard:0,healthy:true})});assert.equal(invalidNode.status,400);report.checks.push('Missing heartbeat role rejected with 400');
+const topology=async()=>{const r=await fetch(base+'/ops/topology');assert.ok(r.ok);return r.json();};
+assert.equal((await topology()).nodes.find(n=>n.nodeId===nodeId).stale,false);
+await pause(22000);
+const snapshot=await topology();assert.equal(snapshot.nodes.find(n=>n.nodeId===nodeId).stale,true);
+const members=snapshot.nodes.filter(n=>/^shard-\d-\d+$/.test(n.nodeId));
+assert.equal(members.filter(n=>n.healthy&&!n.stale).length,6);
+report.checks.push('Node registration and 20-second TTL expiration; six live member heartbeats');
+report.members=members;
+const deadBefore=(await mq('/queues/%2F/emergency.dead')).messages||0;
+const publish=payload=>mq('/exchanges/%2F/emergency.events/publish',{properties:{delivery_mode:2},routing_key:'request.created',payload,payload_encoding:'string'});
+assert.equal((await publish('invalid-json-test-fixture')).routed,true);
+let deadAfter=deadBefore;
+for(let i=0;i<20&&deadAfter===deadBefore;i++){await pause(1000);deadAfter=(await mq('/queues/%2F/emergency.dead')).messages||0;}
+assert.equal(deadAfter,deadBefore+1);report.checks.push('Malformed event rejected into durable dead-letter queue');
+const smoke=JSON.parse(await readFile('docs/evidence/smoke-kubernetes.json','utf8'));
+const before=await (await fetch(base+'/requests/'+smoke.requestId)).json();
+const event=JSON.stringify({eventId:randomUUID(),requestId:smoke.requestId});
+for(let i=0;i<5;i++)assert.equal((await publish(event)).routed,true);
+let drained=false;
+for(let i=0;i<20;i++){await pause(1000);const q=await mq('/queues/%2F/emergency.match');if(q.messages===0&&q.messages_unacknowledged===0){drained=true;break;}}
+assert.ok(drained);
+const after=await (await fetch(base+'/requests/'+smoke.requestId)).json();
+assert.equal(after.status,before.status);assert.equal(after.matchedResourceId,before.matchedResourceId);
+report.checks.push('Five duplicate events drained without changing completed assignment');
+await writeFile('docs/evidence/kubernetes-observability.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));
