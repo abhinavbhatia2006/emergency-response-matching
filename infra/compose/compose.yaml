@@ -1,0 +1,149 @@
+name: emergency-matching
+x-database: &database
+  image: postgres:17.6
+  environment:
+    POSTGRES_DB: emergency
+    POSTGRES_USER: ${DB_USER:?Set DB_USER in .env}
+    POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+  healthcheck:
+    test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d emergency']
+    interval: 5s
+    timeout: 3s
+    retries: 20
+  restart: unless-stopped
+services:
+  shard-0:
+    <<: *database
+    ports: ["127.0.0.1:5433:5432"]
+    volumes: [shard-0-data:/var/lib/postgresql/data]
+  shard-1:
+    <<: *database
+    ports: ["127.0.0.1:5434:5432"]
+    volumes: [shard-1-data:/var/lib/postgresql/data]
+  shard-2:
+    <<: *database
+    ports: ["127.0.0.1:5435:5432"]
+    volumes: [shard-2-data:/var/lib/postgresql/data]
+  rabbitmq:
+    image: rabbitmq:4.1.4-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?Set RABBITMQ_USER in .env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}
+    ports: ["127.0.0.1:5672:5672", "127.0.0.1:15672:15672"]
+    volumes: [rabbitmq-data:/var/lib/rabbitmq]
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+  storage-coordinator:
+    image: emergency/storage-coordinator:dev
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: storage-coordinator
+    environment:
+      PORT: 8080
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:?Set INTERNAL_TOKEN}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      SHARD_URLS: jdbc:postgresql://shard-0:5432/emergency,jdbc:postgresql://shard-1:5432/emergency,jdbc:postgresql://shard-2:5432/emergency
+      COORDINATOR_URL: http://storage-coordinator:8080
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+    depends_on:
+      shard-0: {condition: service_healthy}
+      shard-1: {condition: service_healthy}
+      shard-2: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+    restart: unless-stopped
+
+  request-service:
+    image: emergency/request-service:dev
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: request-service
+    environment:
+      PORT: 8080
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:?Set INTERNAL_TOKEN}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      SHARD_URLS: jdbc:postgresql://shard-0:5432/emergency,jdbc:postgresql://shard-1:5432/emergency,jdbc:postgresql://shard-2:5432/emergency
+      COORDINATOR_URL: http://storage-coordinator:8080
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+    depends_on:
+      shard-0: {condition: service_healthy}
+      shard-1: {condition: service_healthy}
+      shard-2: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+    restart: unless-stopped
+
+  resource-service:
+    image: emergency/resource-service:dev
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: resource-service
+    environment:
+      PORT: 8080
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:?Set INTERNAL_TOKEN}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      SHARD_URLS: jdbc:postgresql://shard-0:5432/emergency,jdbc:postgresql://shard-1:5432/emergency,jdbc:postgresql://shard-2:5432/emergency
+      COORDINATOR_URL: http://storage-coordinator:8080
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+    depends_on:
+      shard-0: {condition: service_healthy}
+      shard-1: {condition: service_healthy}
+      shard-2: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+    restart: unless-stopped
+
+  matching-service:
+    image: emergency/matching-service:dev
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: matching-service
+    environment:
+      PORT: 8080
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:?Set INTERNAL_TOKEN}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      SHARD_URLS: jdbc:postgresql://shard-0:5432/emergency,jdbc:postgresql://shard-1:5432/emergency,jdbc:postgresql://shard-2:5432/emergency
+      COORDINATOR_URL: http://storage-coordinator:8080
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+    depends_on:
+      shard-0: {condition: service_healthy}
+      shard-1: {condition: service_healthy}
+      shard-2: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+    restart: unless-stopped
+
+  frontend:
+    image: emergency/frontend:dev
+    build:
+      context: ../..
+      dockerfile: frontend/Dockerfile
+    ports: ["127.0.0.1:8088:8080"]
+    depends_on: [request-service, resource-service]
+    restart: unless-stopped
+
+volumes:
+  shard-0-data:
+  shard-1-data:
+  shard-2-data:
+  rabbitmq-data:
