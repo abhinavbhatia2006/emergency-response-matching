@@ -1,0 +1,12 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: coordinator-internal-only, namespace: emergency}
+spec:
+  podSelector:
+    matchLabels: {app: storage-coordinator}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {component: application}
+      ports: [{protocol: TCP, port: 8080}]
