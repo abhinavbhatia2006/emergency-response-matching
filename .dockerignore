@@ -1,0 +1,11 @@
+.git
+.tools
+**/target
+!backend/*/target/
+backend/*/target/*
+!backend/*/target/*.jar
+**/node_modules
+**/dist
+.env
+logs
+tmp
