@@ -1,0 +1,10 @@
+# Fast local packaging after scripts/build.ps1. CI uses the source-build Dockerfile.
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+RUN groupadd --gid 10001 app && useradd --uid 10001 --gid app app
+ARG SERVICE
+COPY backend/${SERVICE}/target/${SERVICE}-1.0.0-SNAPSHOT.jar /app/app.jar
+USER 10001
+EXPOSE 8080
+ENV JAVA_TOOL_OPTIONS="-Xms64m -Xmx256m -XX:+ExitOnOutOfMemoryError"
+ENTRYPOINT ["java","-jar","/app/app.jar"]
