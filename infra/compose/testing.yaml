@@ -1,0 +1,4 @@
+# Local-only coordinator access for integration tests. Internal-token checks still apply.
+services:
+  storage-coordinator:
+    ports: ["127.0.0.1:18080:8080"]
