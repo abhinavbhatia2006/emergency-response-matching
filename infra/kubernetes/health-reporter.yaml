@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: health-reporter, namespace: emergency}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: health-reporter, namespace: emergency}
+rules:
+  - apiGroups: ['']
+    resources: [pods]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: health-reporter, namespace: emergency}
+subjects: [{kind: ServiceAccount, name: health-reporter, namespace: emergency}]
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: health-reporter}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: health-reporter, namespace: emergency}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: health-reporter}
+  template:
+    metadata:
+      labels: {app: health-reporter, component: application}
+    spec:
+      serviceAccountName: health-reporter
+      securityContext: {runAsNonRoot: true}
+      containers:
+        - name: reporter
+          image: emergency/health-reporter:dev
+          imagePullPolicy: IfNotPresent
+          securityContext: {allowPrivilegeEscalation: false}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+          envFrom:
+            - secretRef: {name: application-secrets}
