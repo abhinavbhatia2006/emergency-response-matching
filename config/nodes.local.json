@@ -1,0 +1,8 @@
+[
+  {"id":"shard-0-primary","url":"http://127.0.0.1:9100","shard":0},
+  {"id":"shard-0-replica","url":"http://127.0.0.1:9101","shard":0},
+  {"id":"shard-1-primary","url":"http://127.0.0.1:9102","shard":1},
+  {"id":"shard-1-replica","url":"http://127.0.0.1:9103","shard":1},
+  {"id":"shard-2-primary","url":"http://127.0.0.1:9104","shard":2},
+  {"id":"shard-2-replica","url":"http://127.0.0.1:9105","shard":2}
+]
