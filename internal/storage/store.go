@@ -67,6 +67,25 @@ func Open(path string) (*Store, error) {
 
 func clone(r Record) Record { r.Value = append(json.RawMessage(nil), r.Value...); return r }
 
+// ReplaceSnapshot installs an authoritative snapshot, preserving exact versions
+// and tombstones. Missing keys are removed. The caller must serialize authority;
+// this operation deliberately does not compare versions against local records.
+func (s *Store) ReplaceSnapshot(records []Record) error {
+	next := make(map[string]Record, len(records))
+	for _, r := range records {
+		if !validKey(r.Key) || r.Version == 0 || (!r.Deleted && !json.Valid(r.Value)) || (r.Deleted && len(r.Value) != 0) {
+			return ErrInvalid
+		}
+		if _, exists := next[r.Key]; exists {
+			return ErrInvalid
+		}
+		next[r.Key] = clone(r)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.persist(next)
+}
+
 func (s *Store) Get(key string) (Record, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -131,34 +150,42 @@ func (s *Store) commit(r Record) (Record, error) {
 		next[key] = record
 	}
 	next[r.Key] = r
+	if err := s.persist(next); err != nil {
+		return Record{}, err
+	}
+	return clone(r), nil
+}
+
+// Caller holds the write lock; memory changes only after the rename succeeds.
+func (s *Store) persist(next map[string]Record) error {
 	data, err := json.Marshal(next)
 	if err != nil {
-		return Record{}, err
+		return err
 	}
 	dir := filepath.Dir(s.path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
-		return Record{}, fmt.Errorf("create data directory: %w", err)
+		return fmt.Errorf("create data directory: %w", err)
 	}
 	f, err := os.CreateTemp(dir, ".snapshot-*")
 	if err != nil {
-		return Record{}, err
+		return err
 	}
 	temp := f.Name()
 	defer os.Remove(temp)
 	if _, err := f.Write(data); err != nil {
 		f.Close()
-		return Record{}, err
+		return err
 	}
 	if err := f.Sync(); err != nil {
 		f.Close()
-		return Record{}, err
+		return err
 	}
 	if err := f.Close(); err != nil {
-		return Record{}, err
+		return err
 	}
 	if err := os.Rename(temp, s.path); err != nil {
-		return Record{}, fmt.Errorf("replace snapshot: %w", err)
+		return fmt.Errorf("replace snapshot: %w", err)
 	}
 	s.records = next
-	return clone(r), nil
+	return nil
 }
