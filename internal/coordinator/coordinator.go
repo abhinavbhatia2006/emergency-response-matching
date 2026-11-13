@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -107,15 +109,19 @@ func (c *Coordinator) candidates(shard int) []*NodeState {
 	}
 	return result
 }
-func (c *Coordinator) snapshot(shard int) []storage.Record {
+func (c *Coordinator) records(shard int) ([]storage.Record, error) {
 	records := make([]storage.Record, 0)
-	for _, r := range c.journal.Snapshot() {
+	all, err := c.journal.Records()
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range all {
 		index, _ := storage.Shard(r.Key, 3)
 		if index == shard {
 			records = append(records, r)
 		}
 	}
-	return records
+	return records, nil
 }
 
 func (c *Coordinator) send(ctx context.Context, n *NodeState, method, path string, body []byte) ([]byte, error) {
@@ -141,7 +147,7 @@ func (c *Coordinator) send(ctx context.Context, n *NodeState, method, path strin
 }
 func (c *Coordinator) syncNode(ctx context.Context, n *NodeState, data []byte) error {
 	n.Ready = false
-	if _, err := c.send(ctx, n, http.MethodPut, "/internal/snapshot", data); err != nil {
+	if _, err := c.send(ctx, n, http.MethodPut, "/internal/records", data); err != nil {
 		return fmt.Errorf("%w: node %s", ErrUnavailable, n.ID)
 	}
 	n.Ready = true
@@ -158,7 +164,12 @@ func (c *Coordinator) Register(ctx context.Context, id string) error {
 	}
 	for _, n := range c.nodes {
 		if n.ID == id {
-			data, err := json.Marshal(c.snapshot(n.Shard))
+			n.Ready = false
+			records, err := c.records(n.Shard)
+			if err != nil {
+				return err
+			}
+			data, err := json.Marshal(records)
 			if err != nil {
 				return err
 			}
@@ -181,9 +192,9 @@ func (c *Coordinator) Get(ctx context.Context, key string) (storage.Record, erro
 	return c.get(ctx, key)
 }
 func sameJSON(a, b json.RawMessage) bool {
-	canonical := func(raw json.RawMessage) ([]byte, error) {
+	decode := func(raw json.RawMessage) (any, error) {
 		decoder := json.NewDecoder(bytes.NewReader(raw))
-		decoder.UseNumber() // Never round large integer IDs through float64.
+		decoder.UseNumber() // Preserve integers beyond float64 precision.
 		var value any
 		if err := decoder.Decode(&value); err != nil {
 			return nil, err
@@ -192,14 +203,68 @@ func sameJSON(a, b json.RawMessage) bool {
 		if err := decoder.Decode(&extra); err != io.EOF {
 			return nil, storage.ErrInvalid
 		}
-		return json.Marshal(value)
+		return value, nil
 	}
-	x, err := canonical(a)
+	x, err := decode(a)
 	if err != nil {
 		return false
 	}
-	y, err := canonical(b)
-	return err == nil && bytes.Equal(x, y)
+	y, err := decode(b)
+	return err == nil && equalJSONValue(x, y)
+}
+
+func equalJSONValue(a, b any) bool {
+	switch x := a.(type) {
+	case json.Number:
+		y, ok := b.(json.Number)
+		if !ok {
+			return false
+		}
+		left, lok := boundedNumber(x)
+		right, rok := boundedNumber(y)
+		return lok && rok && left.Cmp(right) == 0
+	case []any:
+		y, ok := b.([]any)
+		if !ok || len(x) != len(y) {
+			return false
+		}
+		for i := range x {
+			if !equalJSONValue(x[i], y[i]) {
+				return false
+			}
+		}
+		return true
+	case map[string]any:
+		y, ok := b.(map[string]any)
+		if !ok || len(x) != len(y) {
+			return false
+		}
+		for key, value := range x {
+			other, ok := y[key]
+			if !ok || !equalJSONValue(value, other) {
+				return false
+			}
+		}
+		return true
+	default:
+		return a == b
+	}
+}
+
+// PostgreSQL numeric supports at most 131072 digits before the decimal point
+// and 16383 after it. Bound untrusted exponents before allocating a big.Rat.
+func boundedNumber(number json.Number) (*big.Rat, bool) {
+	raw := string(number)
+	if len(raw) > 147460 {
+		return nil, false
+	}
+	if index := strings.IndexAny(raw, "eE"); index >= 0 {
+		exponent, err := strconv.ParseInt(raw[index+1:], 10, 32)
+		if err != nil || exponent > 131072 || exponent < -131072 {
+			return nil, false
+		}
+	}
+	return new(big.Rat).SetString(raw)
 }
 func (c *Coordinator) get(ctx context.Context, key string) (storage.Record, error) {
 	if err := ctx.Err(); err != nil {
@@ -237,7 +302,11 @@ func (c *Coordinator) List(ctx context.Context) ([]storage.Record, error) {
 		}
 	}
 	result := make([]storage.Record, 0)
-	for _, r := range c.journal.Snapshot() {
+	all, err := c.journal.Records()
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range all {
 		if !r.Deleted {
 			got, err := c.get(ctx, r.Key)
 			if err != nil {
@@ -272,23 +341,33 @@ func (c *Coordinator) mutate(ctx context.Context, key string, value json.RawMess
 	if len(nodes) == 0 {
 		return storage.Record{}, ErrUnavailable
 	}
-	// Reject oversized snapshots before persisting a journal change.
+	// Size the database-normalized value before committing any journal change.
+	if !deleted {
+		value, err = c.journal.NormalizeJSON(value, maxBody)
+		if err != nil {
+			return storage.Record{}, err
+		}
+	}
+	// Reject oversized record sets before persisting a journal change.
 	candidate := storage.Record{Key: key, Value: value, Version: expected + 1, Deleted: deleted}
-	snapshot := c.snapshot(shard)
+	recordSet, err := c.records(shard)
+	if err != nil {
+		return storage.Record{}, err
+	}
 	found := false
-	for i, r := range snapshot {
+	for i, r := range recordSet {
 		if r.Key == key {
-			snapshot[i] = candidate
+			recordSet[i] = candidate
 			found = true
 			break
 		}
 	}
 	if !found {
-		snapshot = append(snapshot, candidate)
+		recordSet = append(recordSet, candidate)
 	}
-	data, err := json.Marshal(snapshot)
+	data, err := json.Marshal(recordSet)
 	if err != nil || len(data) > maxBody {
-		return storage.Record{}, fmt.Errorf("%w: shard snapshot exceeds limit", storage.ErrInvalid)
+		return storage.Record{}, fmt.Errorf("%w: shard record set exceeds limit", storage.ErrInvalid)
 	}
 	var record storage.Record
 	if deleted {

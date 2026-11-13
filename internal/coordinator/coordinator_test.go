@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/abhinavbhatia2006/emergency-response-matching/internal/testdb"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -36,7 +37,7 @@ func newPeer(t *testing.T) *testPeer {
 			w.WriteHeader(503)
 			return
 		}
-		if r.Method == "PUT" && r.URL.Path == "/internal/snapshot" {
+		if r.Method == "PUT" && r.URL.Path == "/internal/records" {
 			var records []storage.Record
 			if err := json.NewDecoder(r.Body).Decode(&records); err != nil {
 				w.WriteHeader(400)
@@ -63,11 +64,12 @@ func newPeer(t *testing.T) *testPeer {
 func (p *testPeer) fail(value bool) { p.mu.Lock(); defer p.mu.Unlock(); p.failed = value }
 func setup(t *testing.T) (*Coordinator, []*testPeer, string) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "journal.json")
+	path := testdb.DSN(t)
 	s, err := storage.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(s.Close)
 	var peers []*testPeer
 	var nodes []NodeConfig
 	for shard := 0; shard < 3; shard++ {
@@ -198,6 +200,7 @@ func TestConcurrentCASAndRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(journal.Close)
 	var configs []NodeConfig
 	for _, n := range c.Nodes() {
 		configs = append(configs, n.NodeConfig)
@@ -239,7 +242,7 @@ func TestRejectStaleReplicaAndListAcrossShards(t *testing.T) {
 	p.records[key] = storage.Record{Key: key, Version: 1, Value: json.RawMessage(`{"x":2}`)}
 	p.mu.Unlock()
 	r, err := c.Get(ctx, key)
-	if err != nil || string(r.Value) != `{"x":1}` {
+	if err != nil || !sameJSON(r.Value, json.RawMessage(`{"x":1}`)) {
 		t.Fatalf("stale replica served: %+v %v", r, err)
 	}
 	for _, n := range c.Nodes() {
@@ -321,5 +324,64 @@ func TestReplicaComparisonPreservesLargeIntegers(t *testing.T) {
 	}
 	if !sameJSON(json.RawMessage(`{"a":"&","b":1}`), json.RawMessage(`{"b":1,"a":"\u0026"}`)) {
 		t.Fatal("equivalent serialized objects differ")
+	}
+}
+
+func TestReplicaComparisonAcceptsEquivalentNumbers(t *testing.T) {
+	if !sameJSON(json.RawMessage(`{"n":[1e3,1.00,-0]}`), json.RawMessage(`{"n":[1000,1,0.0]}`)) {
+		t.Fatal("equivalent JSONB numeric values rejected")
+	}
+}
+
+func TestReplicaComparisonRejectsUnboundedExponents(t *testing.T) {
+	for _, raw := range []string{`1e200000`, `1e-200000`} {
+		if sameJSON(json.RawMessage(raw), json.RawMessage(raw)) {
+			t.Fatalf("accepted exponent outside database numeric bounds: %s", raw)
+		}
+	}
+}
+
+func TestJournalFailureDoesNotEraseReplicasOrRenewLease(t *testing.T) {
+	c, peers, _ := setup(t)
+	ctx := context.Background()
+	if _, err := c.Put(ctx, "hello", json.RawMessage(`1e3`), 0); err != nil {
+		t.Fatal(err)
+	}
+	before := c.Nodes()[0].LastHeartbeat
+	c.journal.Close()
+	if _, err := c.List(ctx); err == nil {
+		t.Fatal("database failure returned successful collection")
+	}
+	if err := c.Register(ctx, "s0-0"); err == nil {
+		t.Fatal("registration accepted inaccessible journal")
+	}
+	if c.Nodes()[0].Ready || !c.Nodes()[0].LastHeartbeat.Equal(before) {
+		t.Fatal("failed registration renewed readiness")
+	}
+	peers[0].mu.Lock()
+	defer peers[0].mu.Unlock()
+	if len(peers[0].records) != 1 {
+		t.Fatal("database failure erased replica")
+	}
+}
+
+func TestExpandedJSONRejectedBeforeJournalMutation(t *testing.T) {
+	c, _, _ := setup(t)
+	ctx := context.Background()
+	if _, err := c.Put(ctx, "large", json.RawMessage(`1`), 0); err != nil {
+		t.Fatal(err)
+	}
+	value := json.RawMessage("[" + strings.Repeat("1e131071,", 64) + "1e131071]")
+	if _, err := c.Put(ctx, "large", value, 1); !errors.Is(err, storage.ErrInvalid) {
+		t.Fatalf("want invalid oversized JSONB, got %v", err)
+	}
+	got, err := c.journal.Get("large")
+	if err != nil || got.Version != 1 || string(got.Value) != "1" {
+		t.Fatalf("journal changed: version=%d err=%v", got.Version, err)
+	}
+	for _, n := range c.Nodes() {
+		if err := c.Register(ctx, n.ID); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

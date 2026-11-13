@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/abhinavbhatia2006/emergency-response-matching/internal/testdb"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -16,10 +16,11 @@ import (
 
 func testNode(t *testing.T) (*Node, *storage.Store) {
 	t.Helper()
-	s, err := storage.Open(filepath.Join(t.TempDir(), "store.json"))
+	s, err := storage.Open(testdb.DSN(t))
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(s.Close)
 	n, err := New(s, 0, 3, "secret")
 	if err != nil {
 		t.Fatal(err)
@@ -47,29 +48,29 @@ func TestNodeConfiguration(t *testing.T) {
 		}
 	}
 }
-func TestNodeSnapshotAndReads(t *testing.T) {
+func TestNodeRecordsAndReads(t *testing.T) {
 	n, s := testNode(t)
 	body := `[{"key":"hello","value":{"ok":true},"version":7}]`
-	if w := request(n, "PUT", "/internal/snapshot", body, "secret"); w.Code != 200 {
+	if w := request(n, "PUT", "/internal/records", body, "secret"); w.Code != 200 {
 		t.Fatalf("replace %d %s", w.Code, w.Body)
 	}
 	w := request(n, "GET", "/internal/data/hello", "", "secret")
 	var got storage.Record
-	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || w.Code != 200 || got.Version != 7 || string(got.Value) != `{"ok":true}` {
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || w.Code != 200 || got.Version != 7 || strings.ReplaceAll(string(got.Value), " ", "") != `{"ok":true}` {
 		t.Fatalf("read %d %+v %v", w.Code, got, err)
 	}
-	w = request(n, "GET", "/internal/snapshot", "", "secret")
+	w = request(n, "GET", "/internal/records", "", "secret")
 	var records []storage.Record
 	if err := json.Unmarshal(w.Body.Bytes(), &records); err != nil || len(records) != 1 {
-		t.Fatalf("snapshot: %s", w.Body)
+		t.Fatalf("record set: %s", w.Body)
 	}
-	if w := request(n, "PUT", "/internal/snapshot", `[{"key":"hello","version":8,"deleted":true}]`, "secret"); w.Code != 200 {
+	if w := request(n, "PUT", "/internal/records", `[{"key":"hello","version":8,"deleted":true}]`, "secret"); w.Code != 200 {
 		t.Fatal(w.Body)
 	}
 	if w := request(n, "GET", "/internal/data/hello", "", "secret"); w.Code != 404 {
 		t.Fatalf("tombstone readable: %d", w.Code)
 	}
-	if r := s.Snapshot(); len(r) != 1 || !r[0].Deleted || r[0].Version != 8 {
+	if r, err := s.Records(); err != nil || len(r) != 1 || !r[0].Deleted || r[0].Version != 8 {
 		t.Fatal(r)
 	}
 }
@@ -78,7 +79,7 @@ func TestNodeAuthAndStrictJSON(t *testing.T) {
 	if w := request(n, "GET", "/healthz", "", ""); w.Code != 200 {
 		t.Fatal(w.Code)
 	}
-	for _, path := range []string{"/internal/snapshot", "/internal/data/hello"} {
+	for _, path := range []string{"/internal/records", "/internal/data/hello"} {
 		for _, token := range []string{"", "wrong"} {
 			if w := request(n, "GET", path, "", token); w.Code != 401 {
 				t.Fatalf("unauthorized %s %d", path, w.Code)
@@ -86,15 +87,15 @@ func TestNodeAuthAndStrictJSON(t *testing.T) {
 		}
 	}
 	for _, body := range []string{`null`, `{}`, `[] []`, `[{"key":"hello","version":1,"deleted":true,"extra":1}]`, `[{"key":"a","version":1,"deleted":true}]`, `[{"key":"hello","version":0,"deleted":true}]`, `[{`, strings.Repeat(" ", 8*1024*1024) + `[]`} {
-		w := request(n, "PUT", "/internal/snapshot", body, "secret")
+		w := request(n, "PUT", "/internal/records", body, "secret")
 		if w.Code != 400 {
-			t.Fatalf("invalid snapshot accepted: %d", w.Code)
+			t.Fatalf("invalid record set accepted: %d", w.Code)
 		}
 		if !json.Valid(w.Body.Bytes()) {
 			t.Fatalf("non-JSON error: %s", w.Body)
 		}
-		if len(s.Snapshot()) != 0 {
-			t.Fatal("invalid snapshot changed store")
+		if records, err := s.Records(); err != nil || len(records) != 0 {
+			t.Fatal("invalid record set changed store")
 		}
 	}
 }
@@ -159,5 +160,19 @@ func TestRejectTokenWithHeaderNewlines(t *testing.T) {
 	cancel()
 	if err := RunHeartbeat(ctx, &http.Client{}, "http://localhost", "node", "secret\r", time.Second); !errors.Is(err, storage.ErrInvalid) {
 		t.Fatalf("invalid token not rejected before network loop: %v", err)
+	}
+}
+
+func TestDatabaseFailuresAreUnavailable(t *testing.T) {
+	n, store := testNode(t)
+	store.Close()
+	for _, tc := range []struct{ method, path, body string }{
+		{"GET", "/internal/records", ""},
+		{"PUT", "/internal/records", "[]"},
+		{"GET", "/internal/data/hello", ""},
+	} {
+		if w := request(n, tc.method, tc.path, tc.body, "secret"); w.Code != 503 {
+			t.Fatalf("%s %s after database close: %d %s", tc.method, tc.path, w.Code, w.Body)
+		}
 	}
 }
