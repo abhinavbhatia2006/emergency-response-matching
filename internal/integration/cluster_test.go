@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/abhinavbhatia2006/emergency-response-matching/internal/testdb"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -20,18 +20,18 @@ import (
 func TestSixNodeFailureRecoveryAndDistribution(t *testing.T) {
 	const token = "cluster-test-secret"
 	ctx := context.Background()
-	root := t.TempDir()
 	var configs []coordinator.NodeConfig
 	var servers []*httptest.Server
 	var paths []string
 	var stores []*storage.Store
 	for shard := 0; shard < 3; shard++ {
 		for copy := 0; copy < 2; copy++ {
-			path := filepath.Join(root, fmt.Sprintf("node-%d-%d.json", shard, copy))
+			path := testdb.DSN(t)
 			store, err := storage.Open(path)
 			if err != nil {
 				t.Fatal(err)
 			}
+			t.Cleanup(store.Close)
 			service, err := node.New(store, shard, 3, token)
 			if err != nil {
 				t.Fatal(err)
@@ -44,10 +44,11 @@ func TestSixNodeFailureRecoveryAndDistribution(t *testing.T) {
 			stores = append(stores, store)
 		}
 	}
-	journal, err := storage.Open(filepath.Join(root, "journal.json"))
+	journal, err := storage.Open(testdb.DSN(t))
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(journal.Close)
 	c, err := coordinator.New(journal, configs, token, time.Minute, &http.Client{Timeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
@@ -64,7 +65,10 @@ func TestSixNodeFailureRecoveryAndDistribution(t *testing.T) {
 		}
 	}
 	for i, store := range stores {
-		records := store.Snapshot()
+		records, err := store.Records()
+		if err != nil {
+			t.Fatal(err)
+		}
 		if len(records) == 0 {
 			t.Fatalf("node %d has no data", i)
 		}
@@ -87,7 +91,11 @@ func TestSixNodeFailureRecoveryAndDistribution(t *testing.T) {
 		t.Fatalf("write during failure: %v", err)
 	}
 	deleteKey := ""
-	for _, r := range stores[failedIndex].Snapshot() {
+	staleRecords, err := stores[failedIndex].Records()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range staleRecords {
 		if r.Key != key {
 			deleteKey = r.Key
 			break
@@ -99,11 +107,12 @@ func TestSixNodeFailureRecoveryAndDistribution(t *testing.T) {
 	if _, err := c.Delete(ctx, deleteKey, 1); err != nil {
 		t.Fatal(err)
 	}
-	// Reopen the stopped node's real on-disk state and reconnect on its configured address.
+	// Reopen the stopped node's PostgreSQL state and reconnect on its configured address.
 	recoveredStore, err := storage.Open(paths[failedIndex])
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(recoveredStore.Close)
 	old, _ := recoveredStore.Get(key)
 	if old.Version != 1 {
 		t.Fatal("fixture was not stale")
@@ -131,7 +140,11 @@ func TestSixNodeFailureRecoveryAndDistribution(t *testing.T) {
 		t.Fatalf("deleted record resurrected: %v", err)
 	}
 	tombstone := false
-	for _, r := range recoveredStore.Snapshot() {
+	recoveredRecords, err := recoveredStore.Records()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range recoveredRecords {
 		if r.Key == deleteKey && r.Deleted && r.Version == 2 {
 			tombstone = true
 		}

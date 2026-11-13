@@ -34,7 +34,6 @@ func run(ctx context.Context, args []string, token string) error {
 	}
 	flags := flag.NewFlagSet("storage-node", flag.ContinueOnError)
 	addr := flags.String("addr", ":9100", "HTTP listen address")
-	data := flags.String("data", "data/node.json", "dedicated snapshot file")
 	shard := flags.Int("shard", -1, "shard index (0, 1 or 2)")
 	coordinator := flags.String("coordinator", "http://localhost:8081", "coordinator base URL")
 	id := flags.String("id", "", "configured node ID")
@@ -44,10 +43,11 @@ func run(ctx context.Context, args []string, token string) error {
 	if flags.NArg() != 0 || strings.TrimSpace(*id) == "" {
 		return errors.New("a node ID and named flags are required")
 	}
-	store, err := storage.Open(*data)
+	store, err := storage.Open(os.Getenv("DATABASE_URL"))
 	if err != nil {
 		return fmt.Errorf("open storage: %w", err)
 	}
+	defer store.Close()
 	replica, err := node.New(store, *shard, 3, token)
 	if err != nil {
 		return fmt.Errorf("node configuration: %w", err)

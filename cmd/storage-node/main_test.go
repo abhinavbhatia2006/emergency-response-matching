@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
+	"github.com/abhinavbhatia2006/emergency-response-matching/internal/testdb"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 	"time"
 )
@@ -21,7 +21,8 @@ func TestRunRegistersAndStopsOnCancellation(t *testing.T) {
 	registered := make(chan struct{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { registered <- struct{}{}; cancel() }))
 	defer server.Close()
-	err := run(ctx, []string{"-addr", "127.0.0.1:0", "-data", filepath.Join(t.TempDir(), "data.json"), "-shard", "0", "-coordinator", server.URL, "-id", "shard-0-primary"}, "secret")
+	t.Setenv("DATABASE_URL", testdb.DSN(t))
+	err := run(ctx, []string{"-addr", "127.0.0.1:0", "-shard", "0", "-coordinator", server.URL, "-id", "shard-0-primary"}, "secret")
 	if err != nil {
 		t.Fatal(err)
 	}

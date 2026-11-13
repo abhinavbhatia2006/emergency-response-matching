@@ -27,7 +27,6 @@ func main() {
 }
 func run() error {
 	addr := flag.String("addr", ":8081", "HTTP listen address")
-	data := flag.String("data", "data/coordinator.json", "durable recovery journal path")
 	nodesFile := flag.String("nodes", "", "JSON topology configuration path (required)")
 	ttl := flag.Duration("heartbeat-timeout", 15*time.Second, "node heartbeat lease")
 	flag.Parse()
@@ -49,10 +48,11 @@ func run() error {
 	if err := decoder.Decode(&extra); err != io.EOF {
 		return errors.New("topology must contain one JSON array")
 	}
-	journal, err := storage.Open(*data)
+	journal, err := storage.Open(os.Getenv("DATABASE_URL"))
 	if err != nil {
 		return err
 	}
+	defer journal.Close()
 	service, err := coordinator.New(journal, nodes, os.Getenv("INTERNAL_TOKEN"), *ttl, nil)
 	if err != nil {
 		return err

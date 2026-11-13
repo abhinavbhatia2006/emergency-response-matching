@@ -49,22 +49,27 @@ func (n *Node) Handler() http.Handler {
 			return
 		}
 		switch {
-		case r.URL.Path == "/internal/snapshot":
+		case r.URL.Path == "/internal/records":
 			switch r.Method {
 			case http.MethodGet:
-				respond(w, 200, n.store.Snapshot())
+				records, err := n.store.Records()
+				if err != nil {
+					fail(w, 503, "record read failed")
+					return
+				}
+				respond(w, 200, records)
 			case http.MethodPut:
 				r.Body = http.MaxBytesReader(w, r.Body, 8*1024*1024)
 				decoder := json.NewDecoder(r.Body)
 				decoder.DisallowUnknownFields()
 				var records []storage.Record
 				if err := decoder.Decode(&records); err != nil || records == nil {
-					fail(w, 400, "invalid snapshot")
+					fail(w, 400, "invalid record set")
 					return
 				}
 				var extra any
 				if err := decoder.Decode(&extra); err != io.EOF {
-					fail(w, 400, "invalid snapshot")
+					fail(w, 400, "invalid record set")
 					return
 				}
 				for _, record := range records {
@@ -74,11 +79,11 @@ func (n *Node) Handler() http.Handler {
 						return
 					}
 				}
-				if err := n.store.ReplaceSnapshot(records); err != nil {
+				if err := n.store.ReplaceRecords(records); err != nil {
 					if errors.Is(err, storage.ErrInvalid) {
-						fail(w, 400, "invalid snapshot")
+						fail(w, 400, "invalid record set")
 					} else {
-						fail(w, 503, "snapshot persistence failed")
+						fail(w, 503, "record persistence failed")
 					}
 					return
 				}
@@ -99,7 +104,11 @@ func (n *Node) Handler() http.Handler {
 			}
 			record, err := n.store.Get(key)
 			if err != nil {
-				fail(w, 404, "record not found")
+				if errors.Is(err, storage.ErrNotFound) {
+					fail(w, 404, "record not found")
+				} else {
+					fail(w, 503, "record read failed")
+				}
 				return
 			}
 			respond(w, 200, record)

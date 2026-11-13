@@ -1,0 +1,74 @@
+name: emergency-postgres
+
+x-postgres: &postgres
+  image: postgres:17
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U matching -d $$POSTGRES_DB"]
+    interval: 5s
+    timeout: 5s
+    retries: 12
+
+x-credentials: &credentials
+  POSTGRES_USER: matching
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your environment or .env}
+
+services:
+  coordinator-db:
+    <<: *postgres
+    environment:
+      <<: *credentials
+      POSTGRES_DB: coordinator
+    ports: ["127.0.0.1:15432:5432"]
+    volumes: ["coordinator-data:/var/lib/postgresql/data"]
+  shard-0-primary-db:
+    <<: *postgres
+    environment:
+      <<: *credentials
+      POSTGRES_DB: shard_0_primary
+    ports: ["127.0.0.1:15433:5432"]
+    volumes: ["shard-0-primary-data:/var/lib/postgresql/data"]
+  shard-0-replica-db:
+    <<: *postgres
+    environment:
+      <<: *credentials
+      POSTGRES_DB: shard_0_replica
+    ports: ["127.0.0.1:15434:5432"]
+    volumes: ["shard-0-replica-data:/var/lib/postgresql/data"]
+  shard-1-primary-db:
+    <<: *postgres
+    environment:
+      <<: *credentials
+      POSTGRES_DB: shard_1_primary
+    ports: ["127.0.0.1:15435:5432"]
+    volumes: ["shard-1-primary-data:/var/lib/postgresql/data"]
+  shard-1-replica-db:
+    <<: *postgres
+    environment:
+      <<: *credentials
+      POSTGRES_DB: shard_1_replica
+    ports: ["127.0.0.1:15436:5432"]
+    volumes: ["shard-1-replica-data:/var/lib/postgresql/data"]
+  shard-2-primary-db:
+    <<: *postgres
+    environment:
+      <<: *credentials
+      POSTGRES_DB: shard_2_primary
+    ports: ["127.0.0.1:15437:5432"]
+    volumes: ["shard-2-primary-data:/var/lib/postgresql/data"]
+  shard-2-replica-db:
+    <<: *postgres
+    environment:
+      <<: *credentials
+      POSTGRES_DB: shard_2_replica
+    ports: ["127.0.0.1:15438:5432"]
+    volumes: ["shard-2-replica-data:/var/lib/postgresql/data"]
+
+volumes:
+  coordinator-data:
+  shard-0-primary-data:
+  shard-0-replica-data:
+  shard-1-primary-data:
+  shard-1-replica-data:
+  shard-2-primary-data:
+  shard-2-replica-data:
