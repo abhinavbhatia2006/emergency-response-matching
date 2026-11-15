@@ -21,11 +21,24 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
+      rabbitmq:
+        image: rabbitmq:4-management
+        env:
+          RABBITMQ_DEFAULT_USER: matching
+          RABBITMQ_DEFAULT_PASS: ci-test-password
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
     env:
+      TEST_RABBITMQ_URL: amqp://matching:ci-test-password@localhost:5672/
       TEST_DATABASE_URL: postgres://postgres:ci-test-password@localhost:5432/matching_test?sslmode=disable
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: false
