@@ -80,6 +80,20 @@ func (c *Coordinator) Handler() http.Handler {
 	}
 	mux.HandleFunc("POST /internal/nodes/register", register)
 	mux.HandleFunc("POST /internal/nodes/heartbeat", register)
+	mux.HandleFunc("POST /internal/batch", func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			Mutations []storage.Mutation `json:"mutations"`
+		}
+		if !decode(w, r, &input) {
+			return
+		}
+		records, err := c.Batch(r.Context(), input.Mutations)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, records)
+	})
 	mux.HandleFunc("GET /internal/data", func(w http.ResponseWriter, r *http.Request) {
 		records, err := c.List(r.Context())
 		if err != nil {
