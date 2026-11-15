@@ -4,11 +4,11 @@ A Go system connecting emergency requests with available resources by type and l
 
 ## Development status
 
-Domain models, validation, request lifecycle rules and deterministic resource selection are implemented. The storage cluster now provides a coordinator, three replicated shards, heartbeat leases, failover and restart synchronization. The public application API, RabbitMQ workflow, browser frontend and container deployment are under development.
+Domain models, validation, request lifecycle rules and deterministic resource selection are implemented. The storage cluster now provides a coordinator, three replicated shards, heartbeat leases, failover and restart synchronization. The public request/resource API, atomic matching, RabbitMQ outbox workflow and React dashboard are implemented. Application container deployment and Kubernetes demonstrations are the next stage.
 
 ## Architecture
 
-The runtime design has a request API with a planned React browser frontend, a matching worker, RabbitMQ, a storage coordinator, and three storage shards with one replica each. Clients use REST/JSON without knowing which shard owns their data. React application work and Docker Compose/Kubernetes application deployment configurations will follow; the current database Compose configuration starts PostgreSQL only.
+The runtime design has a request API with a React browser frontend, a matching worker, RabbitMQ, a storage coordinator, and three storage shards with one replica each. Clients use REST/JSON without knowing which shard owns their data. Docker Compose/Kubernetes application deployment configurations will follow; the current database Compose configuration starts PostgreSQL only.
 
 Supported assistance types are food, water, medicine, transportation and shelter. Locations are named districts, trimmed and converted to lowercase. Matching requires the same type and district, and selects the available resource with the lexicographically smallest ID. This gives deterministic results; it does not calculate geographic distance or emergency priority.
 
@@ -16,7 +16,7 @@ Requests progress from `pending` to `matched` to `completed`. Pending or matched
 
 ## Checks
 
-Install Go 1.25 or newer and PostgreSQL 17. Set `TEST_DATABASE_URL` to a disposable test database whose user can create schemas, then run:
+Install Go 1.25 or newer, PostgreSQL 17, RabbitMQ 4 and Node.js 22.12+. Set `TEST_RABBITMQ_URL` for real broker tests. Set `TEST_DATABASE_URL` to a disposable test database whose user can create schemas, then run:
 
 ```sh
 go test ./...
@@ -24,7 +24,7 @@ go test -race ./...
 go vet ./...
 ```
 
-The race detector requires a supported C compiler. CI provisions PostgreSQL 17 and runs formatting, vet and race-enabled tests on Linux. Database tests explicitly skip without `TEST_DATABASE_URL`; a full verification requires it. Tests isolate each store in a fresh schema, then drop it during cleanup. Sharing one test server does not provide independent failure domains.
+The race detector requires a supported C compiler. CI provisions PostgreSQL 17 and RabbitMQ 4 and runs formatting, vet and race-enabled tests on Linux. Database tests explicitly skip without `TEST_DATABASE_URL`; a full verification requires it. Tests isolate each store in a fresh schema, then drop it during cleanup. Sharing one test server does not provide independent failure domains.
 
 ## Layout
 
@@ -51,3 +51,7 @@ Set the same nonempty `INTERNAL_TOKEN` for every process. Start the coordinator 
 Existing-record reads and writes can continue with one synchronized copy per shard. A coordinator outage pauses service until its journal is reopened and replicas register again. This is a single-coordinator demonstration, not a consensus database.
 
 This project is a demonstration system, not an operational emergency dispatch service.
+
+## Application
+
+See the [API and React dashboard guide](docs/application.md) and [matching worker guide](docs/messaging.md) for setup, endpoints, delivery guarantees and capacity limits. The API serves compiled frontend assets from `web/dist`; build them with `npm ci && npm run build` inside `web`. The worker requires `RABBITMQ_URL`.
