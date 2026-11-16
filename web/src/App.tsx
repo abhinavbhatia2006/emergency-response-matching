@@ -330,9 +330,9 @@ export default function App() {
           <span className="brand-icon">
             <Activity size={24} strokeWidth={2.5} />
           </span>
-          relay<span style={{ color: "#42cbb4" }}>.</span>
+          RELAY<span className="brand-stop">®</span>
         </div>
-        <p className="workspace-label">Coordination workspace</p>
+        <p className="workspace-label">Emergency response<br />Coordination desk</p>
         <nav aria-label="Main navigation">
           {[
             { name: "Overview", icon: LayoutDashboard },
@@ -357,19 +357,14 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <ShieldCheck size={22} color="#65b8a6" style={{ marginBottom: 12 }} />
-          <strong>Every connection counts.</strong>
-          <p>
-            Connecting people in need
-            <br />
-            with resources that help.
-          </p>
+          <span className="desk-code">OPERATIONS / 01</span>
+          <strong>People. Resources. Response.</strong>
         </div>
       </aside>
       <div className="shell">
         <header className="topbar">
           <div className="breadcrumb">
-            <span>Workspace</span>
+            <span>Operations desk</span>
             <ChevronRight size={12} />
             <strong>{nav}</strong>
           </div>
@@ -383,34 +378,28 @@ export default function App() {
                   : "Service unavailable"}
             </span>
             <span className="avatar" title="Response coordination">
-              RC
+              RESPONSE NETWORK
             </span>
           </div>
         </header>
         <main>
           <div className="page-heading">
             <div>
-              <p className="eyebrow">Emergency response coordination</p>
+              <p className="eyebrow"><span className="section-number">01 /</span> Emergency response coordination</p>
               <h1>
                 {nav === "Overview"
-                  ? "A clearer picture. A faster response."
+                  ? <>NEED MEETS<br /><span className="heading-accent">ACTION.</span></>
                   : nav === "Requests"
-                    ? "Help starts with a request."
-                    : "Resources, ready to respond."}
+                    ? <>EVERY REQUEST.<br /><span className="heading-accent">A NEXT STEP.</span></>
+                    : <>LOCAL SUPPORT.<br /><span className="heading-accent">READY TO GO.</span></>}
               </h1>
               <p className="subtitle">
-                Bring needs and resources together. Keep your community moving
-                forward.
+                A shared desk for urgent needs and available help.<br />
+                Log it. Match it. Follow it through.
               </p>
             </div>
             <div className="actions">
-              <button
-                className="secondary"
-                onClick={() => openForm("resource")}
-              >
-                <Plus size={15} />
-                Add resource
-              </button>
+              <span className="action-caption">MAKE THE NEXT CONNECTION</span>
               <button
                 className="primary"
                 onClick={() => openForm("request")}
@@ -418,16 +407,22 @@ export default function App() {
                 <Plus size={15} />
                 New request
               </button>
+              <button
+                className="secondary"
+                onClick={() => openForm("resource")}
+              >
+                <Plus size={15} />
+                Add resource
+              </button>
             </div>
           </div>
           {!form && !selected && <Feedback />}
           <section className="intro-banner">
             <div>
-              <h2>Small actions. Meaningful connections.</h2>
+              <h2><span className="signal-mark" aria-hidden="true">↗</span> Response starts here.</h2>
               <p>
-                Log a request or share a resource. Relay matches available help
-                by assistance type and location, so you can focus on what comes
-                next.
+                Requests connect to available resources by assistance type and location.
+                Every status below comes from your live workspace.
               </p>
             </div>
             <div className="banner-icon">
@@ -440,25 +435,25 @@ export default function App() {
                 label: "Total requests",
                 value: requests?.length,
                 icon: ClipboardList,
-                note: "All assistance requests",
+                note: "RECORDED IN THE LEDGER",
               },
               {
                 label: "Pending requests",
                 value: pending,
                 icon: Clock3,
-                note: "Waiting for the right resource",
+                note: "AWAITING A RESOURCE",
               },
               {
                 label: "Available resources",
                 value: available,
                 icon: Package,
-                note: "Ready to make a difference",
+                note: "READY FOR DISPATCH",
               },
               {
                 label: "Completed requests",
                 value: completed,
                 icon: CheckCircle2,
-                note: "Assistance delivered",
+                note: "ASSISTANCE DELIVERED",
               },
             ].map((metric) => (
               <div
@@ -481,8 +476,8 @@ export default function App() {
             <section className="panel">
               <div className="panel-header">
                 <div>
-                  <h2>Your response activity</h2>
-                  <p>One place for the needs and support around you.</p>
+                  <h2><span className="section-number">02 /</span> The response ledger</h2>
+                  <p>Requests in. Resources out. Keep every connection accounted for.</p>
                 </div>
                 <button
                   className="refresh"
@@ -660,13 +655,12 @@ export default function App() {
               <section className="panel side-content">
                 <Search
                   size={19}
-                  color="#6c9a95"
+                  color="currentColor"
                   style={{ marginBottom: 13 }}
                 />
-                <h3>Find a request</h3>
+                <h3>Trace a request.</h3>
                 <p>
-                  Have a request ID? Check its latest status and coordinate the
-                  next step.
+                  Enter an ID to inspect its status, assigned resource, and next action.
                 </p>
                 <form
                   className="lookup"
@@ -700,7 +694,8 @@ export default function App() {
                 </form>
               </section>
               <section className="panel guide">
-                <h3>From request to response</h3>
+                <p className="protocol-label">FIELD NOTES / THE WORKFLOW</p>
+                <h3>Nothing falls<br />through the gaps.</h3>
                 {[
                   {
                     title: "Capture the need",
@@ -716,7 +711,7 @@ export default function App() {
                   },
                 ].map((step, index) => (
                   <div className="step" key={step.title}>
-                    <span className="step-number">{index + 1}</span>
+                    <span className="step-number">0{index + 1}</span>
                     <div>
                       <strong>{step.title}</strong>
                       <p>{step.text}</p>
@@ -727,7 +722,7 @@ export default function App() {
             </div>
           </div>
           <footer>
-            <span>Relay · Built for coordinated care.</span>
+            <span>RELAY / COMMUNITY RESPONSE INFRASTRUCTURE</span>
             <span>
               {updated
                 ? `Last updated ${updated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`

@@ -1,0 +1,545 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: shard-0-primary
+spec:
+  type: ClusterIP
+  selector:
+    app: shard-0-primary
+  ports:
+    - name: service
+      port: 9100
+      targetPort: 9100
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: shard-0-primary
+spec:
+  serviceName: shard-0-primary
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: shard-0-primary
+  template:
+    metadata:
+      labels:
+        app: shard-0-primary
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: storage-node
+          image: emergency-response-matching/storage-node:local
+          imagePullPolicy: IfNotPresent
+          command: ["/app/storage-node"]
+          args: ["-addr", ":9100", "-id", "shard-0-primary", "-shard", "0", "-coordinator", "http://coordinator:8081"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: response-secrets
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgres://matching:$(POSTGRES_PASSWORD)@shard-0-primary-db:5432/shard_0_primary?sslmode=disable"
+            - name: INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: response-secrets
+                  key: INTERNAL_TOKEN
+          ports:
+            - containerPort: 9100
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 9100
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 9100
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9100
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shard-0-replica
+spec:
+  type: ClusterIP
+  selector:
+    app: shard-0-replica
+  ports:
+    - name: service
+      port: 9100
+      targetPort: 9100
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: shard-0-replica
+spec:
+  serviceName: shard-0-replica
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: shard-0-replica
+  template:
+    metadata:
+      labels:
+        app: shard-0-replica
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: storage-node
+          image: emergency-response-matching/storage-node:local
+          imagePullPolicy: IfNotPresent
+          command: ["/app/storage-node"]
+          args: ["-addr", ":9100", "-id", "shard-0-replica", "-shard", "0", "-coordinator", "http://coordinator:8081"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: response-secrets
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgres://matching:$(POSTGRES_PASSWORD)@shard-0-replica-db:5432/shard_0_replica?sslmode=disable"
+            - name: INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: response-secrets
+                  key: INTERNAL_TOKEN
+          ports:
+            - containerPort: 9100
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 9100
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 9100
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9100
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shard-1-primary
+spec:
+  type: ClusterIP
+  selector:
+    app: shard-1-primary
+  ports:
+    - name: service
+      port: 9100
+      targetPort: 9100
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: shard-1-primary
+spec:
+  serviceName: shard-1-primary
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: shard-1-primary
+  template:
+    metadata:
+      labels:
+        app: shard-1-primary
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: storage-node
+          image: emergency-response-matching/storage-node:local
+          imagePullPolicy: IfNotPresent
+          command: ["/app/storage-node"]
+          args: ["-addr", ":9100", "-id", "shard-1-primary", "-shard", "1", "-coordinator", "http://coordinator:8081"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: response-secrets
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgres://matching:$(POSTGRES_PASSWORD)@shard-1-primary-db:5432/shard_1_primary?sslmode=disable"
+            - name: INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: response-secrets
+                  key: INTERNAL_TOKEN
+          ports:
+            - containerPort: 9100
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 9100
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 9100
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9100
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shard-1-replica
+spec:
+  type: ClusterIP
+  selector:
+    app: shard-1-replica
+  ports:
+    - name: service
+      port: 9100
+      targetPort: 9100
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: shard-1-replica
+spec:
+  serviceName: shard-1-replica
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: shard-1-replica
+  template:
+    metadata:
+      labels:
+        app: shard-1-replica
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: storage-node
+          image: emergency-response-matching/storage-node:local
+          imagePullPolicy: IfNotPresent
+          command: ["/app/storage-node"]
+          args: ["-addr", ":9100", "-id", "shard-1-replica", "-shard", "1", "-coordinator", "http://coordinator:8081"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: response-secrets
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgres://matching:$(POSTGRES_PASSWORD)@shard-1-replica-db:5432/shard_1_replica?sslmode=disable"
+            - name: INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: response-secrets
+                  key: INTERNAL_TOKEN
+          ports:
+            - containerPort: 9100
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 9100
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 9100
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9100
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shard-2-primary
+spec:
+  type: ClusterIP
+  selector:
+    app: shard-2-primary
+  ports:
+    - name: service
+      port: 9100
+      targetPort: 9100
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: shard-2-primary
+spec:
+  serviceName: shard-2-primary
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: shard-2-primary
+  template:
+    metadata:
+      labels:
+        app: shard-2-primary
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: storage-node
+          image: emergency-response-matching/storage-node:local
+          imagePullPolicy: IfNotPresent
+          command: ["/app/storage-node"]
+          args: ["-addr", ":9100", "-id", "shard-2-primary", "-shard", "2", "-coordinator", "http://coordinator:8081"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: response-secrets
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgres://matching:$(POSTGRES_PASSWORD)@shard-2-primary-db:5432/shard_2_primary?sslmode=disable"
+            - name: INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: response-secrets
+                  key: INTERNAL_TOKEN
+          ports:
+            - containerPort: 9100
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 9100
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 9100
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9100
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shard-2-replica
+spec:
+  type: ClusterIP
+  selector:
+    app: shard-2-replica
+  ports:
+    - name: service
+      port: 9100
+      targetPort: 9100
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: shard-2-replica
+spec:
+  serviceName: shard-2-replica
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: shard-2-replica
+  template:
+    metadata:
+      labels:
+        app: shard-2-replica
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: storage-node
+          image: emergency-response-matching/storage-node:local
+          imagePullPolicy: IfNotPresent
+          command: ["/app/storage-node"]
+          args: ["-addr", ":9100", "-id", "shard-2-replica", "-shard", "2", "-coordinator", "http://coordinator:8081"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: response-secrets
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgres://matching:$(POSTGRES_PASSWORD)@shard-2-replica-db:5432/shard_2_replica?sslmode=disable"
+            - name: INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: response-secrets
+                  key: INTERNAL_TOKEN
+          ports:
+            - containerPort: 9100
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 9100
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 9100
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 9100
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi

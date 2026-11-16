@@ -1,0 +1,98 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: coordinator
+spec:
+  type: ClusterIP
+  selector:
+    app: coordinator
+  ports:
+    - name: service
+      port: 8081
+      targetPort: 8081
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: coordinator
+spec:
+  serviceName: coordinator
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: coordinator
+  template:
+    metadata:
+      labels:
+        app: coordinator
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: coordinator
+          image: emergency-response-matching/coordinator:local
+          imagePullPolicy: IfNotPresent
+          command: ["/app/coordinator"]
+          args: ["-addr", ":8081", "-nodes", "/app/config/nodes.json"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: response-secrets
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgres://matching:$(POSTGRES_PASSWORD)@coordinator-db:5432/coordinator?sslmode=disable"
+            - name: INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: response-secrets
+                  key: INTERNAL_TOKEN
+          ports:
+            - containerPort: 8081
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+          volumeMounts:
+            - name: topology
+              mountPath: /app/config
+              readOnly: true
+      volumes:
+        - name: topology
+          configMap:
+            name: response-topology

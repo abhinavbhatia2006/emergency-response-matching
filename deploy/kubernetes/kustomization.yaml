@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: response-matching
+resources:
+  - namespace.yaml
+  - postgres.yaml
+  - rabbitmq.yaml
+  - coordinator.yaml
+  - storage-nodes.yaml
+  - request-api.yaml
+  - matching-worker.yaml
+configMapGenerator:
+  - name: response-topology
+    files:
+      - nodes.json
