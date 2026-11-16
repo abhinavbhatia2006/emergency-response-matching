@@ -4,11 +4,15 @@ A Go system connecting emergency requests with available resources by type and l
 
 ## Development status
 
-Domain models, validation, request lifecycle rules and deterministic resource selection are implemented. The storage cluster now provides a coordinator, three replicated shards, heartbeat leases, failover and restart synchronization. The public request/resource API, atomic matching, RabbitMQ outbox workflow and React dashboard are implemented. Application container deployment and Kubernetes demonstrations are the next stage.
+Domain models, validation, request lifecycle rules and deterministic resource selection are implemented. The storage cluster provides a coordinator, three replicated shards, heartbeat leases, failover and restart synchronization. The public request/resource API, atomic matching, RabbitMQ outbox workflow and React dashboard run in Docker Compose and Kubernetes. Full deployment failure and scaling demonstrations are the next stage.
 
 ## Architecture
 
-The runtime design has a request API with a React browser frontend, a matching worker, RabbitMQ, a storage coordinator, and three storage shards with one replica each. Clients use REST/JSON without knowing which shard owns their data. Docker Compose/Kubernetes application deployment configurations will follow; the current database Compose configuration starts PostgreSQL only.
+The runtime has a request API with a React browser frontend, a matching worker, RabbitMQ, a storage coordinator, and three storage shards with one replica each. Clients use REST/JSON without knowing which shard owns their data. Each storage process has its own persistent PostgreSQL database. Complete deployment configurations include seven database instances and a durable message broker.
+
+## Run the complete application
+
+Follow the [Docker Compose guide](docs/docker.md) to build and start the application locally, or the [Kubernetes guide](docs/kubernetes.md) to deploy it to a cluster. Both guides include private credential setup, persistent storage, health checks and an end-to-end smoke command. Only the API/frontend needs to be reachable by clients.
 
 Supported assistance types are food, water, medicine, transportation and shelter. Locations are named districts, trimmed and converted to lowercase. Matching requires the same type and district, and selects the available resource with the lexicographically smallest ID. This gives deterministic results; it does not calculate geographic distance or emergency priority.
 

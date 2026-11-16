@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: request-api
+spec:
+  type: ClusterIP
+  selector:
+    app: request-api
+  ports:
+    - name: service
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: request-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: request-api
+  template:
+    metadata:
+      labels:
+        app: request-api
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: request-api
+          image: emergency-response-matching/request-api:local
+          imagePullPolicy: IfNotPresent
+          command: ["/app/request-api"]
+          args: ["-addr", ":8080", "-web", "/app/web/dist"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: COORDINATOR_URL
+              value: "http://coordinator:8081"
+            - name: INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: response-secrets
+                  key: INTERNAL_TOKEN
+          ports:
+            - containerPort: 8080
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi

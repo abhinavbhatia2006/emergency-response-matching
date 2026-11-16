@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: matching-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: matching-worker
+  template:
+    metadata:
+      labels:
+        app: matching-worker
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: matching-worker
+          image: emergency-response-matching/matching-worker:local
+          imagePullPolicy: IfNotPresent
+          command: ["/app/matching-worker"]
+          args: []
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: COORDINATOR_URL
+              value: "http://coordinator:8081"
+            - name: INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: response-secrets
+                  key: INTERNAL_TOKEN
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: response-secrets
+                  key: RABBITMQ_PASSWORD
+            - name: RABBITMQ_URL
+              value: "amqp://matching:$(RABBITMQ_PASSWORD)@rabbitmq:5672/"
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
