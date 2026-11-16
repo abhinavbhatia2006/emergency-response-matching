@@ -1,0 +1,256 @@
+name: response-matching
+
+x-postgres: &postgres
+  image: postgres:17-alpine
+  restart: unless-stopped
+  mem_limit: 256m
+  cpus: 0.5
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U matching -d $$POSTGRES_DB"]
+    interval: 5s
+    timeout: 5s
+    retries: 24
+    start_period: 10s
+
+x-db-environment: &db-environment
+  POSTGRES_USER: matching
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD to an alphanumeric or hex secret}
+
+x-app: &app
+  restart: unless-stopped
+  mem_limit: 128m
+  cpus: 0.5
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: ["ALL"]
+
+x-app-environment: &app-environment
+  INTERNAL_TOKEN: ${INTERNAL_TOKEN:?Set INTERNAL_TOKEN to a private random secret}
+  COORDINATOR_URL: http://coordinator:8081
+
+x-node: &node
+  <<: *app
+  image: emergency-response-matching/storage-node:local
+  build:
+    context: .
+    target: storage-node
+  healthcheck:
+    test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9100/healthz"]
+    interval: 5s
+    timeout: 3s
+    retries: 24
+    start_period: 10s
+
+services:
+  coordinator-db:
+    <<: *postgres
+    environment:
+      <<: *db-environment
+      POSTGRES_DB: coordinator
+    volumes: ["coordinator-data:/var/lib/postgresql/data"]
+
+  shard-0-primary-db:
+    <<: *postgres
+    environment:
+      <<: *db-environment
+      POSTGRES_DB: shard_0_primary
+    volumes: ["shard-0-primary-data:/var/lib/postgresql/data"]
+
+  shard-0-replica-db:
+    <<: *postgres
+    environment:
+      <<: *db-environment
+      POSTGRES_DB: shard_0_replica
+    volumes: ["shard-0-replica-data:/var/lib/postgresql/data"]
+
+  shard-1-primary-db:
+    <<: *postgres
+    environment:
+      <<: *db-environment
+      POSTGRES_DB: shard_1_primary
+    volumes: ["shard-1-primary-data:/var/lib/postgresql/data"]
+
+  shard-1-replica-db:
+    <<: *postgres
+    environment:
+      <<: *db-environment
+      POSTGRES_DB: shard_1_replica
+    volumes: ["shard-1-replica-data:/var/lib/postgresql/data"]
+
+  shard-2-primary-db:
+    <<: *postgres
+    environment:
+      <<: *db-environment
+      POSTGRES_DB: shard_2_primary
+    volumes: ["shard-2-primary-data:/var/lib/postgresql/data"]
+
+  shard-2-replica-db:
+    <<: *postgres
+    environment:
+      <<: *db-environment
+      POSTGRES_DB: shard_2_replica
+    volumes: ["shard-2-replica-data:/var/lib/postgresql/data"]
+
+  rabbitmq:
+    image: rabbitmq:4-alpine
+    hostname: rabbitmq
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1.0
+    environment:
+      RABBITMQ_DEFAULT_USER: matching
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD to an alphanumeric or hex secret}
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "+S 2:2 +SDcpu 1 +SDio 1"
+    volumes: ["rabbitmq-data:/var/lib/rabbitmq"]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 24
+      start_period: 20s
+
+  coordinator:
+    <<: *app
+    image: emergency-response-matching/coordinator:local
+    build:
+      context: .
+      target: coordinator
+    environment:
+      <<: *app-environment
+      DATABASE_URL: postgres://matching:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@coordinator-db:5432/coordinator?sslmode=disable
+    depends_on:
+      coordinator-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
+
+  shard-0-primary:
+    <<: *node
+    command: ["-addr", "0.0.0.0:9100", "-id", "shard-0-primary", "-shard", "0", "-coordinator", "http://coordinator:8081"]
+    environment:
+      <<: *app-environment
+      DATABASE_URL: postgres://matching:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@shard-0-primary-db:5432/shard_0_primary?sslmode=disable
+    depends_on:
+      shard-0-primary-db:
+        condition: service_healthy
+      coordinator:
+        condition: service_healthy
+
+  shard-0-replica:
+    <<: *node
+    command: ["-addr", "0.0.0.0:9100", "-id", "shard-0-replica", "-shard", "0", "-coordinator", "http://coordinator:8081"]
+    environment:
+      <<: *app-environment
+      DATABASE_URL: postgres://matching:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@shard-0-replica-db:5432/shard_0_replica?sslmode=disable
+    depends_on:
+      shard-0-replica-db:
+        condition: service_healthy
+      coordinator:
+        condition: service_healthy
+
+  shard-1-primary:
+    <<: *node
+    command: ["-addr", "0.0.0.0:9100", "-id", "shard-1-primary", "-shard", "1", "-coordinator", "http://coordinator:8081"]
+    environment:
+      <<: *app-environment
+      DATABASE_URL: postgres://matching:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@shard-1-primary-db:5432/shard_1_primary?sslmode=disable
+    depends_on:
+      shard-1-primary-db:
+        condition: service_healthy
+      coordinator:
+        condition: service_healthy
+
+  shard-1-replica:
+    <<: *node
+    command: ["-addr", "0.0.0.0:9100", "-id", "shard-1-replica", "-shard", "1", "-coordinator", "http://coordinator:8081"]
+    environment:
+      <<: *app-environment
+      DATABASE_URL: postgres://matching:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@shard-1-replica-db:5432/shard_1_replica?sslmode=disable
+    depends_on:
+      shard-1-replica-db:
+        condition: service_healthy
+      coordinator:
+        condition: service_healthy
+
+  shard-2-primary:
+    <<: *node
+    command: ["-addr", "0.0.0.0:9100", "-id", "shard-2-primary", "-shard", "2", "-coordinator", "http://coordinator:8081"]
+    environment:
+      <<: *app-environment
+      DATABASE_URL: postgres://matching:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@shard-2-primary-db:5432/shard_2_primary?sslmode=disable
+    depends_on:
+      shard-2-primary-db:
+        condition: service_healthy
+      coordinator:
+        condition: service_healthy
+
+  shard-2-replica:
+    <<: *node
+    command: ["-addr", "0.0.0.0:9100", "-id", "shard-2-replica", "-shard", "2", "-coordinator", "http://coordinator:8081"]
+    environment:
+      <<: *app-environment
+      DATABASE_URL: postgres://matching:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@shard-2-replica-db:5432/shard_2_replica?sslmode=disable
+    depends_on:
+      shard-2-replica-db:
+        condition: service_healthy
+      coordinator:
+        condition: service_healthy
+
+  request-api:
+    <<: *app
+    image: emergency-response-matching/request-api:local
+    build:
+      context: .
+      target: request-api
+    environment:
+      <<: *app-environment
+    ports: ["127.0.0.1:${APP_PORT:-8080}:8080"]
+    depends_on:
+      coordinator:
+        condition: service_healthy
+      shard-0-primary:
+        condition: service_healthy
+      shard-0-replica:
+        condition: service_healthy
+      shard-1-primary:
+        condition: service_healthy
+      shard-1-replica:
+        condition: service_healthy
+      shard-2-primary:
+        condition: service_healthy
+      shard-2-replica:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 36
+      start_period: 15s
+
+  matching-worker:
+    <<: *app
+    image: emergency-response-matching/matching-worker:local
+    build:
+      context: .
+      target: matching-worker
+    environment:
+      <<: *app-environment
+      RABBITMQ_URL: amqp://matching:${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD}@rabbitmq:5672/
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      request-api:
+        condition: service_healthy
+
+volumes:
+  coordinator-data:
+  shard-0-primary-data:
+  shard-0-replica-data:
+  shard-1-primary-data:
+  shard-1-replica-data:
+  shard-2-primary-data:
+  shard-2-replica-data:
+  rabbitmq-data:
