@@ -1,0 +1,13 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+**/node_modules
+**/dist
+bin
+data
+coverage.out
+*.test
+*.exe
+*.log

@@ -1,0 +1,32 @@
+[
+  {
+    "id": "shard-0-primary",
+    "url": "http://shard-0-primary:9100",
+    "shard": 0
+  },
+  {
+    "id": "shard-0-replica",
+    "url": "http://shard-0-replica:9100",
+    "shard": 0
+  },
+  {
+    "id": "shard-1-primary",
+    "url": "http://shard-1-primary:9100",
+    "shard": 1
+  },
+  {
+    "id": "shard-1-replica",
+    "url": "http://shard-1-replica:9100",
+    "shard": 1
+  },
+  {
+    "id": "shard-2-primary",
+    "url": "http://shard-2-primary:9100",
+    "shard": 2
+  },
+  {
+    "id": "shard-2-replica",
+    "url": "http://shard-2-replica:9100",
+    "shard": 2
+  }
+]
