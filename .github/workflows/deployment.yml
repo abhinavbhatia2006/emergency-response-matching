@@ -17,12 +17,16 @@ jobs:
       - uses: actions/checkout@v6
       - name: Validate Compose
         run: docker compose config --quiet
+      - name: Render Kubernetes configuration
+        run: kubectl kustomize deploy/kubernetes > /tmp/response-matching.yaml
       - name: Build application images
         run: docker compose build
       - name: Start complete stack
         run: docker compose up -d --no-build --wait --wait-timeout 240
       - name: Verify deployed application
         run: python3 scripts/smoke.py --url http://127.0.0.1:18081 --timeout 180
+      - name: Verify geographic matching
+        run: python3 scripts/geographic-smoke.py --url http://127.0.0.1:18081 --timeout 180
       - name: Show service diagnostics
         if: failure()
         run: docker compose ps && docker compose logs --tail 100

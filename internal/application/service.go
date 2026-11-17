@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
@@ -22,16 +23,32 @@ import (
 var ErrUnavailable = errors.New("service unavailable; verify current state before retrying")
 
 type Service struct {
-	base, token string
-	client      *http.Client
+	base, token       string
+	client            *http.Client
+	maxDistanceMeters float64
 }
 
-func New(base, token string) (*Service, error) {
+type Option func(*Service)
+
+func WithMaxDistanceMeters(limit float64) Option {
+	return func(s *Service) { s.maxDistanceMeters = limit }
+}
+func New(base, token string, options ...Option) (*Service, error) {
 	u, e := url.Parse(base)
 	if e != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || strings.TrimSpace(token) == "" || strings.ContainsAny(token, "\r\n") {
 		return nil, domain.ErrInvalid
 	}
-	return &Service{strings.TrimRight(base, "/"), token, &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirects disabled") }}}, nil
+	s := &Service{base: strings.TrimRight(base, "/"), token: token, maxDistanceMeters: 50000, client: &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirects disabled") }}}
+	for _, option := range options {
+		if option == nil {
+			return nil, domain.ErrInvalid
+		}
+		option(s)
+	}
+	if math.IsNaN(s.maxDistanceMeters) || math.IsInf(s.maxDistanceMeters, 0) || s.maxDistanceMeters <= 0 || s.maxDistanceMeters > 20015000 {
+		return nil, domain.ErrInvalid
+	}
+	return s, nil
 }
 func (s *Service) call(ctx context.Context, method, path string, input, output any) error {
 	var body io.Reader
@@ -105,10 +122,14 @@ func jobMutation(requestID string) (storage.Mutation, error) {
 	id := hex.EncodeToString(b[:])
 	return put("job/"+id, Job{ID: id, RequestID: requestID}, 0), nil
 }
-func (s *Service) CreateRequest(ctx context.Context, kind, location, details string) (domain.Request, error) {
+func (s *Service) CreateRequest(ctx context.Context, kind, location, details string, coordinates ...*domain.Coordinates) (domain.Request, error) {
 	r, e := domain.NewRequest(kind, location, details, time.Now())
 	if e != nil {
 		return r, e
+	}
+	r.Coordinates, e = copyCoordinates(coordinates)
+	if e != nil {
+		return domain.Request{}, e
 	}
 	j, e := jobMutation(r.ID)
 	if e != nil {
@@ -167,10 +188,14 @@ func (s *Service) ListResources(ctx context.Context) ([]domain.Resource, error) 
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
 }
-func (s *Service) CreateResource(ctx context.Context, kind, location string, available bool) (domain.Resource, error) {
+func (s *Service) CreateResource(ctx context.Context, kind, location string, available bool, coordinates ...*domain.Coordinates) (domain.Resource, error) {
 	r, e := domain.NewResource(kind, location, available)
 	if e != nil {
 		return r, e
+	}
+	r.Coordinates, e = copyCoordinates(coordinates)
+	if e != nil {
+		return domain.Resource{}, e
 	}
 	ms := []storage.Mutation{put("resource/"+r.ID, r, 0)}
 	if available {
@@ -207,8 +232,10 @@ func (s *Service) Match(ctx context.Context, id string) (domain.Request, error) 
 			if request.Status != domain.Pending {
 				continue
 			}
-			if _, e := domain.SelectResource(request, resources); errors.Is(e, domain.ErrNoMatch) {
-				continue
+			if request.Coordinates == nil {
+				if _, e := domain.SelectResource(request, resources); errors.Is(e, domain.ErrNoMatch) {
+					continue
+				}
 			}
 			matched, e := s.Match(ctx, request.ID)
 			if errors.Is(e, domain.ErrNoMatch) {
@@ -263,11 +290,12 @@ func (s *Service) Match(ctx context.Context, id string) (domain.Request, error) 
 		if req.Status != domain.Pending {
 			return req, nil
 		}
-		resource, e := domain.SelectResource(req, resources)
+		resource, distance, e := s.selectResource(req, resources)
 		if e != nil {
 			return req, e
 		}
 		req.ResourceID = resource.ID
+		req.DistanceMeters = distance
 		if e = req.Transition(domain.Matched); e != nil {
 			return req, e
 		}

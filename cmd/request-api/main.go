@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/abhinavbhatia2006/emergency-response-matching/internal/application"
+	"github.com/abhinavbhatia2006/emergency-response-matching/internal/config"
 	"log"
 	"net"
 	"net/http"
@@ -28,7 +29,11 @@ func run(ctx context.Context, args []string) error {
 	if base == "" {
 		base = "http://127.0.0.1:8081"
 	}
-	service, e := application.New(base, os.Getenv("INTERNAL_TOKEN"))
+	maxDistance, e := config.MaxMatchDistanceMeters()
+	if e != nil {
+		return e
+	}
+	service, e := application.New(base, os.Getenv("INTERNAL_TOKEN"), application.WithMaxDistanceMeters(maxDistance))
 	if e != nil {
 		return fmt.Errorf("invalid coordinator URL or internal token")
 	}
@@ -39,7 +44,7 @@ func run(ctx context.Context, args []string) error {
 		hasUI = true
 	}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/requests") || strings.HasPrefix(r.URL.Path, "/resources") || strings.HasPrefix(r.URL.Path, "/match/") || r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
+		if strings.HasPrefix(r.URL.Path, "/requests") || strings.HasPrefix(r.URL.Path, "/resources") || strings.HasPrefix(r.URL.Path, "/match/") || r.URL.Path == "/healthz" || r.URL.Path == "/readyz" || r.URL.Path == "/config" {
 			api.ServeHTTP(w, r)
 			return
 		}
