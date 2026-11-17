@@ -44,15 +44,18 @@ const (
 )
 
 type Request struct {
-	ID         string        `json:"id"`
-	Type       Type          `json:"type"`
-	Location   string        `json:"location"`
-	Details    string        `json:"details"`
-	Status     RequestStatus `json:"status"`
-	CreatedAt  time.Time     `json:"created_at"`
-	ResourceID string        `json:"resource_id,omitempty"`
+	Coordinates    *Coordinates  `json:"coordinates,omitempty"`
+	DistanceMeters *float64      `json:"distance_meters,omitempty"`
+	ID             string        `json:"id"`
+	Type           Type          `json:"type"`
+	Location       string        `json:"location"`
+	Details        string        `json:"details"`
+	Status         RequestStatus `json:"status"`
+	CreatedAt      time.Time     `json:"created_at"`
+	ResourceID     string        `json:"resource_id,omitempty"`
 }
 type Resource struct {
+	Coordinates  *Coordinates   `json:"coordinates,omitempty"`
 	ID           string         `json:"id"`
 	Type         Type           `json:"type"`
 	Location     string         `json:"location"`

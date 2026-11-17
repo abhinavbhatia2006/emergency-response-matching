@@ -27,7 +27,7 @@ func failure(w http.ResponseWriter, e error) {
 		message = "not found"
 	case errors.Is(e, domain.ErrNoMatch):
 		status = 409
-		message = "no available resource matches this type and location"
+		message = "no available resource meets the matching criteria"
 	case errors.Is(e, storage.ErrConflict):
 		status = 409
 		message = "concurrent update; reload and retry"
@@ -61,6 +61,9 @@ func readBody(w http.ResponseWriter, r *http.Request, v any) bool {
 }
 func (s *Service) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /config", func(w http.ResponseWriter, r *http.Request) {
+		respond(w, 200, map[string]any{"max_distance_meters": s.maxDistanceMeters, "distance_method": "haversine"})
+	})
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { respond(w, 200, map[string]string{"status": "ok"}) })
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		if _, e := s.records(r.Context()); e != nil {
@@ -71,14 +74,20 @@ func (s *Service) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST /requests", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
-			Type     string `json:"type"`
-			Location string `json:"location"`
-			Details  string `json:"details"`
+			Type        string          `json:"type"`
+			Location    string          `json:"location"`
+			Details     string          `json:"details"`
+			Coordinates json.RawMessage `json:"coordinates"`
 		}
 		if !readBody(w, r, &in) {
 			return
 		}
-		out, e := s.CreateRequest(r.Context(), in.Type, in.Location, in.Details)
+		coordinates, e := decodeCoordinates(in.Coordinates)
+		if e != nil {
+			failure(w, e)
+			return
+		}
+		out, e := s.CreateRequest(r.Context(), in.Type, in.Location, in.Details, coordinates)
 		if e != nil {
 			failure(w, e)
 			return
@@ -118,9 +127,10 @@ func (s *Service) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST /resources", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
-			Type         string `json:"type"`
-			Location     string `json:"location"`
-			Availability *bool  `json:"availability"`
+			Type         string          `json:"type"`
+			Location     string          `json:"location"`
+			Availability *bool           `json:"availability"`
+			Coordinates  json.RawMessage `json:"coordinates"`
 		}
 		if !readBody(w, r, &in) {
 			return
@@ -129,7 +139,12 @@ func (s *Service) Handler() http.Handler {
 			failure(w, domain.ErrInvalid)
 			return
 		}
-		out, e := s.CreateResource(r.Context(), in.Type, in.Location, *in.Availability)
+		coordinates, e := decodeCoordinates(in.Coordinates)
+		if e != nil {
+			failure(w, e)
+			return
+		}
+		out, e := s.CreateResource(r.Context(), in.Type, in.Location, *in.Availability, coordinates)
 		if e != nil {
 			failure(w, e)
 			return

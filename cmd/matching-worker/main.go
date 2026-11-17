@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/abhinavbhatia2006/emergency-response-matching/internal/application"
+	"github.com/abhinavbhatia2006/emergency-response-matching/internal/config"
 	"github.com/abhinavbhatia2006/emergency-response-matching/internal/messaging"
 )
 
@@ -29,7 +30,11 @@ func run() error {
 	if rabbitURL == "" {
 		return errors.New("RABBITMQ_URL is required")
 	}
-	service, err := application.New(url, token)
+	maxDistance, err := config.MaxMatchDistanceMeters()
+	if err != nil {
+		return err
+	}
+	service, err := application.New(url, token, application.WithMaxDistanceMeters(maxDistance))
 	if err != nil {
 		return err
 	}
