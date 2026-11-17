@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 
 type Kind = "food" | "water" | "medicine" | "transportation" | "shelter";
+type Coordinates = { latitude: number; longitude: number };
 type RequestRecord = {
   id: string;
   type: Kind;
@@ -40,6 +41,8 @@ type RequestRecord = {
   status: "pending" | "matched" | "completed" | "cancelled";
   created_at: string;
   resource_id?: string;
+  coordinates?: Coordinates;
+  distance_meters?: number;
 };
 type Resource = {
   id: string;
@@ -47,6 +50,7 @@ type Resource = {
   location: string;
   availability: boolean;
   status: "available" | "unavailable" | "reserved";
+  coordinates?: Coordinates;
 };
 const kinds: Kind[] = [
   "food",
@@ -63,6 +67,8 @@ const icons = {
   shelter: Home,
 };
 const title = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
+const coordinateLabel = ({ latitude, longitude }: Coordinates) => `${latitude}, ${longitude}`;
+const kilometers = (meters: number) => `${new Intl.NumberFormat("en", { maximumFractionDigits: 3 }).format(meters / 1000)} km`;
 async function api<T>(
   path: string,
   method = "GET",
@@ -134,7 +140,7 @@ function Dialog({
           if (event.key === "Escape") onClose();
           if (event.key === "Tab") {
             const items = ref.current?.querySelectorAll<HTMLElement>(
-              'button:not(:disabled),input,select,textarea,[tabindex="0"]',
+              'button:not(:disabled),input,select,textarea,a[href],[tabindex="0"]',
             );
             if (!items?.length) return;
             const first = items[0],
@@ -180,6 +186,8 @@ export default function App() {
     [notice, setNotice] = useState(""),
     [lookup, setLookup] = useState(""),
     [updated, setUpdated] = useState<Date | null>(null);
+  const [maxDistance, setMaxDistance] = useState<number | null>(null);
+  const limitDescription = maxDistance === null ? "Matching limit unavailable." : `Maximum matching distance: ${kilometers(maxDistance)}.`;
   const refresh = useCallback(async () => {
     setRefreshing(true);
     const results = await Promise.allSettled([
@@ -188,8 +196,11 @@ export default function App() {
       fetch("/readyz", { signal: AbortSignal.timeout(12000) }).then(
         (r) => r.ok,
       ),
+      api<unknown>("/config"),
     ]);
-    const [requestResult, resourceResult, readyResult] = results;
+    const [requestResult, resourceResult, readyResult, configResult] = results;
+    const config = configResult.status === "fulfilled" && typeof configResult.value === "object" && configResult.value !== null ? configResult.value as Record<string, unknown> : null;
+    setMaxDistance(config?.distance_method === "haversine" && typeof config.max_distance_meters === "number" && Number.isFinite(config.max_distance_meters) && config.max_distance_meters >= 0 ? config.max_distance_meters : null);
     if (requestResult.status === "fulfilled")
       setRequests(requestResult.value ?? []);
     else setRequests(null);
@@ -251,9 +262,17 @@ export default function App() {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     await action(async () => {
+      const latitudeText = String(data.get("latitude") ?? "").trim();
+      const longitudeText = String(data.get("longitude") ?? "").trim();
+      const latitude = Number(latitudeText);
+      const longitude = Number(longitudeText);
+      if (!latitudeText || !longitudeText || !Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+        throw new Error("Enter both coordinates: latitude must be -90 to 90 and longitude must be -180 to 180.");
+      }
       const body = {
         type: String(data.get("type")),
         location: String(data.get("location")).trim(),
+        coordinates: { latitude, longitude },
       };
       if (form === "request") {
         const saved = await api<RequestRecord>("/requests", "POST", {
@@ -421,8 +440,9 @@ export default function App() {
             <div>
               <h2><span className="signal-mark" aria-hidden="true">↗</span> Response starts here.</h2>
               <p>
-                Requests connect to available resources by assistance type and location.
-                Every status below comes from your live workspace.
+                New requests connect to the nearest available, same-type resource by straight-line geographic distance.
+                District names are labels; coordinates determine proximity.
+                <span className="matching-limit" aria-label="Matching distance limit">{maxDistance === null ? "Matching limit unavailable" : `${kilometers(maxDistance)} maximum`}</span>
               </p>
             </div>
             <div className="banner-icon">
@@ -571,6 +591,7 @@ export default function App() {
                                 <span className="location">
                                   {record.location}
                                 </span>
+                                <span className="coordinate-meta">{record.coordinates ? coordinateLabel(record.coordinates) : "District matching · no coordinates"}</span>
                               </td>
                               <td>
                                 <Badge status={record.status} />
@@ -699,11 +720,11 @@ export default function App() {
                 {[
                   {
                     title: "Capture the need",
-                    text: "Choose the assistance type and location.",
+                    text: "Choose the assistance type. Add a location label and coordinates.",
                   },
                   {
                     title: "Connect the right help",
-                    text: "Matching finds an available local resource.",
+                    text: `The nearest same-type resource by straight-line distance. ${limitDescription}`,
                   },
                   {
                     title: "Close the loop",
@@ -767,8 +788,14 @@ export default function App() {
               />
             </label>
             <p className="field-help" style={{ marginTop: -14 }}>
-              Use the same area name for requests and resources.
+              Area or landmark label. Matching uses the coordinates below, even across district names.
             </p>
+            <fieldset className="coordinate-fields" aria-describedby="coordinate-help">
+              <legend>Geographic coordinates</legend>
+              <label>Latitude<input name="latitude" type="number" required min={-90} max={90} step="any" inputMode="decimal" placeholder="e.g. 28.6139" /></label>
+              <label>Longitude<input name="longitude" type="number" required min={-180} max={180} step="any" inputMode="decimal" placeholder="e.g. 77.2090" /></label>
+            </fieldset>
+            <p id="coordinate-help" className="field-help" style={{ marginTop: -10 }}>Use decimal degrees: latitude -90 to 90; longitude -180 to 180. Matching uses straight-line geographic distance. {limitDescription}</p>
             {form === "request" ? (
               <label>
                 Request details
@@ -837,6 +864,15 @@ export default function App() {
               <span>{new Date(selected.created_at).toLocaleString()}</span>
             </div>
             <p className="detail-copy">{selected.details}</p>
+            {selected.coordinates ? <>
+              <div className="detail-line"><span>Coordinates (lat, lon)</span><span className="detail-id">{coordinateLabel(selected.coordinates)}</span></div>
+              <section className="distance-summary" aria-label="Geographic matching">
+                <p className="distance-kicker">STRAIGHT-LINE GEOGRAPHIC DISTANCE</p>
+                {typeof selected.distance_meters === "number" && Number.isFinite(selected.distance_meters) && selected.distance_meters >= 0 ?
+                  <><strong className="assigned-distance">{kilometers(selected.distance_meters)}</strong><p className="field-help">Distance recorded at matching time. Geographic proximity does not measure travel distance or arrival time.</p></> :
+                  <p className="field-help">No assigned distance yet. {limitDescription}</p>}
+              </section>
+            </> : <p className="legacy-note">District matching · no coordinates</p>}
             {selected.resource_id && (
               <div className="detail-line">
                 <span>Assigned resource</span>
@@ -904,7 +940,9 @@ export default function App() {
             </div>
             <p className="field-help">
               {selected.status === "pending"
-                ? "Matching uses the same assistance type and location. You can also try matching manually."
+                ? selected.coordinates
+                  ? `Matching selects the nearest available same-type resource using geographic coordinates. ${limitDescription}`
+                  : "This legacy request matches by assistance type and district only. Geographic distance is not checked."
                 : selected.status === "matched"
                   ? "Complete this request after assistance is delivered. Cancelling releases the assigned resource."
                   : "This request is closed and its status cannot be changed."}

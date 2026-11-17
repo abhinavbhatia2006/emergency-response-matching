@@ -31,6 +31,11 @@ spec:
             capabilities:
               drop: [ALL]
           env:
+            - name: MAX_MATCH_DISTANCE_METERS
+              valueFrom:
+                configMapKeyRef:
+                  name: matching-settings
+                  key: max-distance-meters
             - name: COORDINATOR_URL
               value: "http://coordinator:8081"
             - name: INTERNAL_TOKEN

@@ -207,6 +207,7 @@ services:
       target: request-api
     environment:
       <<: *app-environment
+      MAX_MATCH_DISTANCE_METERS: ${MAX_MATCH_DISTANCE_METERS:-50000}
     ports: ["127.0.0.1:${APP_PORT:-8080}:8080"]
     depends_on:
       coordinator:
@@ -238,6 +239,7 @@ services:
       target: matching-worker
     environment:
       <<: *app-environment
+      MAX_MATCH_DISTANCE_METERS: ${MAX_MATCH_DISTANCE_METERS:-50000}
       RABBITMQ_URL: amqp://matching:${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD}@rabbitmq:5672/
     depends_on:
       rabbitmq:

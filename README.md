@@ -14,7 +14,7 @@ The runtime has a request API with a React browser frontend, a matching worker, 
 
 Follow the [Docker Compose guide](docs/docker.md) to build and start the application locally, or the [Kubernetes guide](docs/kubernetes.md) to deploy it to a cluster. Both guides include private credential setup, persistent storage, health checks and an end-to-end smoke command. Only the API/frontend needs to be reachable by clients.
 
-Supported assistance types are food, water, medicine, transportation and shelter. Locations are named districts, trimmed and converted to lowercase. Matching requires the same type and district, and selects the available resource with the lexicographically smallest ID. This gives deterministic results; it does not calculate geographic distance or emergency priority.
+Supported assistance types are food, water, medicine, transportation and shelter. New dashboard records include latitude and longitude. Matching selects the nearest available resource of the same type within a configurable straight-line geographic radius (50 km by default), with resource ID as a deterministic tie-breaker. Distance is calculated locally without an external service. Existing coordinate-less API records retain exact-district matching. See the [geographic matching guide](docs/geographic-matching.md) for configuration, accuracy and compatibility details.
 
 Requests progress from `pending` to `matched` to `completed`. Pending or matched requests may be cancelled. A matching operation must assign a resource before entering `matched`. Selection alone does not reserve a resource: the service layer must atomically coordinate assignment and availability.
 

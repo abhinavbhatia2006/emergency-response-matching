@@ -39,3 +39,7 @@ Only matching assigns `matched`. Pending requests can be cancelled; matched requ
 ## Demonstration limits
 
 The API is an unauthenticated local demonstration; bind locally or put it behind appropriate access control before wider exposure. Storage uses one coordinator and full-shard transfers bounded to 8 MiB. Batches support 256 mutations. Deleted outbox jobs retain tombstones for recovery; historical jobs count toward shard capacity even when no jobs are pending. There is no online compaction. Capacity exhaustion rejects the change before commit, rather than discarding recovery information. This design is intended for bounded demonstration datasets, not continuous production dispatch.
+
+## Coordinate matching
+
+Creation bodies may include `coordinates: {"latitude": 28.633, "longitude": 77.2167}`; both members are required together. The dashboard requires this object for new records. Coordinate-equipped requests choose the nearest available same-type resource within `MAX_MATCH_DISTANCE_METERS` (default 50000), and matched responses include `distance_meters`. Older coordinate-less clients retain exact-district matching. `GET /config` returns the configured maximum and `distance_method: "haversine"`. See [geographic matching](geographic-matching.md).
