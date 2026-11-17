@@ -113,3 +113,7 @@ This checks the compiled UI, public create/read/status flow, and asynchronous ma
 - Ordered environment entries resolve Secret passwords before the `DATABASE_URL`/`RABBITMQ_URL` that reference them. This follows Kubernetes [dependent environment variable semantics](https://kubernetes.io/docs/tasks/inject-data-application/define-interdependent-environment-variables/). Persistent identities and volumes follow [StatefulSet semantics](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/).
 
 After rebuilding an image under the same `:local` tag, load it again, then restart the corresponding Deployment or StatefulSet; Kubernetes does not detect a change to an image with an unchanged tag. Ordinary Pod recreation preserves data. StatefulSet deletion normally retains its claims, but **deleting namespace `response-matching` (including `kubectl delete -k deploy/kubernetes`, because this bundle includes the namespace) deletes its PVCs and may permanently delete their backing data under a Delete reclaim policy**. Do not use namespace/bundle deletion to restart this stack. Back up any data you need before explicitly deleting claims or the kind cluster.
+
+## Geographic matching radius
+
+The API and worker share a default 50 km straight-line geographic limit. No external distance API or credential is required. See [geographic matching](geographic-matching.md) to adjust the radius and run `scripts/geographic-smoke.py`. Keep API and worker configuration consistent.

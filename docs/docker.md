@@ -38,3 +38,7 @@ docker compose -f compose.yml down
 ```
 
 `stop`, container recreation, and ordinary `down` preserve all eight named volumes. `docker compose -f compose.yml down --volumes` permanently deletes this project's database and broker data; use it only for an intentional clean reset after saving anything needed. Do not remove unrelated containers or volumes. Secrets are environment variables visible to Docker administrators; use a managed secret system and authenticated TLS networking for deployment beyond this local demonstration.
+
+## Geographic matching radius
+
+The API and worker share a default 50 km straight-line geographic limit. No external distance API or credential is required. See [geographic matching](geographic-matching.md) to adjust the radius and run `scripts/geographic-smoke.py`. Keep API and worker configuration consistent.

@@ -10,6 +10,9 @@ resources:
   - request-api.yaml
   - matching-worker.yaml
 configMapGenerator:
+  - name: matching-settings
+    literals:
+      - max-distance-meters=50000
   - name: response-topology
     files:
       - nodes.json
