@@ -114,6 +114,12 @@ function Dialog({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    // A status change can remove the focused action button while the dialog stays open.
+    if (document.activeElement === document.body) {
+      ref.current?.querySelector<HTMLElement>("button:not(:disabled),input,select,textarea")?.focus();
+    }
+  });
+  useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     const original = document.body.style.overflow;
     document.body.style.overflow = "hidden";

@@ -72,6 +72,17 @@ beforeEach(() => {
   );
 });
 afterEach(() => vi.unstubAllGlobals());
+it("keeps keyboard focus inside the dialog after completing a request", async () => {
+  rows = [{ ...request, status: "matched" }];
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: "View request req-123" }));
+  await user.click(screen.getByRole("button", { name: "Mark completed" }));
+  await screen.findByText("Request marked completed.");
+  await waitFor(() => expect(screen.getByRole("button", { name: "Close dialog" })).toHaveFocus());
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
 it("shows the actual configured geographic matching limit", async () => {
   configResponse = {max_distance_meters: 12500, distance_method: "haversine"};
   const user = userEvent.setup();
