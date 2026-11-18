@@ -27,6 +27,8 @@ jobs:
         run: python3 scripts/smoke.py --url http://127.0.0.1:18081 --timeout 180
       - name: Verify geographic matching
         run: python3 scripts/geographic-smoke.py --url http://127.0.0.1:18081 --timeout 180
+      - name: Verify storage distribution and recovery
+        run: python3 scripts/failure-smoke.py --env-file /dev/null --url http://127.0.0.1:18081
       - name: Show service diagnostics
         if: failure()
         run: docker compose ps && docker compose logs --tail 100
