@@ -1,3 +1,4 @@
+import ShardDetails from "./ShardDetails";
 import {
   useCallback,
   useEffect,
@@ -182,7 +183,7 @@ export default function App() {
   const [health, setHealth] = useState<"checking" | "ready" | "offline">(
     "checking",
   );
-  const [tab, setTab] = useState<"requests" | "resources">("requests"),
+  const [tab, setTab] = useState<"requests" | "resources" | "shard details">("requests"),
     [nav, setNav] = useState("Overview");
   const [form, setForm] = useState<"request" | "resource" | null>(null),
     [selected, setSelected] = useState<RequestRecord | null>(null);
@@ -535,8 +536,10 @@ export default function App() {
                 >
                   Resources <span>{count(resources?.length)}</span>
                 </button>
+                <button role="tab" aria-selected={tab === "shard details"} className={`tab ${tab === "shard details" ? "active" : ""}`} onClick={() => setTab("shard details")}>Shard details</button>
               </div>
               <div role="tabpanel" aria-label={title(tab)}>
+                {tab === "shard details" ? <ShardDetails /> : <>
                 {rows === null ? (
                   <div className="loading">
                     {refreshing
@@ -668,14 +671,15 @@ export default function App() {
                     </table>
                   </div>
                 )}
+                </>}
               </div>
               <div className="table-footer">
                 <span>
-                  {rows
+                  {tab === "shard details" ? "Development diagnostics" : rows
                     ? `${rows.length} ${tab} in your workspace`
                     : "Live data unavailable"}
                 </span>
-                <span>Updates every 15 seconds</span>
+                <span>{tab === "shard details" ? "Refresh to update topology" : "Updates every 15 seconds"}</span>
               </div>
             </section>
             <div className="right-column">

@@ -72,6 +72,14 @@ beforeEach(() => {
   );
 });
 afterEach(() => vi.unstubAllGlobals());
+it("offers a third Shard details activity tab", async () => {
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(screen.getByRole("tab", { name: "Shard details" }));
+  expect(screen.getByRole("tab", { name: "Shard details" })).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByRole("tabpanel", { name: "Shard details" })).toBeInTheDocument();
+  expect(await screen.findByText(/development view/i)).toBeInTheDocument();
+});
 it("keeps keyboard focus inside the dialog after completing a request", async () => {
   rows = [{ ...request, status: "matched" }];
   const user = userEvent.setup();
