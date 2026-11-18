@@ -61,6 +61,11 @@ func readBody(w http.ResponseWriter, r *http.Request, v any) bool {
 }
 func (s *Service) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /development/shards", s.shardDetails)
+	mux.HandleFunc("/development/shards", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Allow", "GET, HEAD")
+		respond(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+	})
 	mux.HandleFunc("GET /config", func(w http.ResponseWriter, r *http.Request) {
 		respond(w, 200, map[string]any{"max_distance_meters": s.maxDistanceMeters, "distance_method": "haversine"})
 	})

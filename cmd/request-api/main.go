@@ -44,7 +44,7 @@ func run(ctx context.Context, args []string) error {
 		hasUI = true
 	}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/requests") || strings.HasPrefix(r.URL.Path, "/resources") || strings.HasPrefix(r.URL.Path, "/match/") || r.URL.Path == "/healthz" || r.URL.Path == "/readyz" || r.URL.Path == "/config" {
+		if strings.HasPrefix(r.URL.Path, "/requests") || strings.HasPrefix(r.URL.Path, "/resources") || strings.HasPrefix(r.URL.Path, "/match/") || r.URL.Path == "/healthz" || r.URL.Path == "/readyz" || r.URL.Path == "/config" || r.URL.Path == "/development/shards" {
 			api.ServeHTTP(w, r)
 			return
 		}
