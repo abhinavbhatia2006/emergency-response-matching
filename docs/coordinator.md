@@ -27,6 +27,7 @@ All internal routes require `Authorization: Bearer <INTERNAL_TOKEN>`. Use privat
 | POST | `/internal/nodes/register` | `{"id":"shard-0-primary"}` |
 | POST | `/internal/nodes/heartbeat` | Same as registration; synchronizes and renews lease |
 | GET | `/internal/nodes` | Node ID, URL, shard, readiness and heartbeat time |
+| GET | `/internal/shard-counts` | Request and resource counts from the journal, ordered by shard ID |
 | PUT | `/internal/data/{key}` | `{"value":{...},"expected_version":0}`; returns record |
 | GET | `/internal/data/{key}` | Record, or 404 |
 | DELETE | `/internal/data/{key}` | `{"expected_version":1}`; returns tombstone |

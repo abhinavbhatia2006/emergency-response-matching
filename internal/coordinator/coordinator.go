@@ -318,6 +318,33 @@ func (c *Coordinator) List(ctx context.Context) ([]storage.Record, error) {
 	return result, nil
 }
 
+type shardCounts struct {
+	Requests  int `json:"requests"`
+	Resources int `json:"resources"`
+}
+
+// recordCounts counts logical records in the journal regardless of replica readiness.
+func (c *Coordinator) recordCounts(ctx context.Context) ([3]shardCounts, error) {
+	var counts [3]shardCounts
+	keys, err := c.journal.LiveKeys(ctx)
+	if err != nil {
+		return counts, err
+	}
+	for _, key := range keys {
+		shard, err := storage.Shard(key, len(counts))
+		if err != nil {
+			return counts, err
+		}
+		switch {
+		case strings.HasPrefix(key, "request/"):
+			counts[shard].Requests++
+		case strings.HasPrefix(key, "resource/"):
+			counts[shard].Resources++
+		}
+	}
+	return counts, nil
+}
+
 func (c *Coordinator) Put(ctx context.Context, key string, value json.RawMessage, expected uint64) (storage.Record, error) {
 	return c.mutate(ctx, key, value, expected, false)
 }

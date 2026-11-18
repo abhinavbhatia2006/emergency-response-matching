@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App from "./App";
+import { Marker } from "leaflet";
 const request = {
   id: "req-123",
   type: "water",
@@ -10,7 +11,7 @@ const request = {
   status: "pending",
   created_at: "2026-11-15T12:00:00Z",
 };
-type RequestFixture = typeof request & { coordinates?: { latitude: number; longitude: number }; distance_meters?: number; resource_id?: string };
+type RequestFixture = typeof request & { coordinates?: { latitude: number; longitude: number }; directions?: string; distance_meters?: number; resource_id?: string };
 let rows: RequestFixture[];
 let resources: object[];
 let ready: boolean;
@@ -35,9 +36,9 @@ beforeEach(() => {
       if (input === "/requests" && init?.method === "POST") {
         const body = JSON.parse(String(init.body));
         posted.push(body);
-        if (body.type !== "water" || body.location !== "delhi" || !body.details)
+        if (body.type !== "water" || !body.coordinates || !body.details)
           return new Response('{"error":"bad input"}', { status: 400 });
-        rows = [{ ...request, ...body }];
+        rows = [{ ...request, ...body, location: body.location?.toLowerCase() ?? "" }];
         return Response.json(rows[0], { status: 201 });
       }
       if (input === "/requests") return Response.json(rows);
@@ -48,6 +49,7 @@ beforeEach(() => {
           {
             id: "res-123",
             ...body,
+            location: body.location?.toLowerCase() ?? "",
             status: body.availability ? "available" : "unavailable",
           },
         ];
@@ -147,7 +149,8 @@ it("creates a request with the public payload and displays the saved result", as
     within(dialog).getByLabelText("Assistance type"),
     "water",
   );
-  await user.type(within(dialog).getByLabelText("Location"), "delhi");
+  expect(within(dialog).queryByLabelText(/^location$/i)).not.toBeInTheDocument();
+  await user.type(within(dialog).getByLabelText("Name"), "Gate 2");
   await user.type(within(dialog).getByLabelText("Latitude"), "0");
   await user.type(within(dialog).getByLabelText("Longitude"), "0");
   await user.type(
@@ -162,7 +165,8 @@ it("creates a request with the public payload and displays the saved result", as
   ).toBeInTheDocument();
   expect(screen.getByText("Drinking water for a family")).toBeInTheDocument();
   expect(screen.getByLabelText("Pending requests")).toHaveTextContent("1");
-  expect(posted[0]).toEqual({ type: "water", location: "delhi", details: "Drinking water for a family", coordinates: { latitude: 0, longitude: 0 } });
+  expect(within(screen.getByRole("dialog")).getByText("gate 2")).toBeInTheDocument();
+  expect(posted[0]).toEqual({ type: "water", location: "Gate 2", details: "Drinking water for a family", coordinates: { latitude: 0, longitude: 0 } });
 });
 it("matches a pending request and allows completion only after matching", async () => {
   rows = [request];
@@ -200,7 +204,6 @@ it("registers an unavailable resource without miscounting available resources", 
   render(<App />);
   await user.click(screen.getByRole("button", { name: "Add resource" }));
   const dialog = screen.getByRole("dialog");
-  await user.type(within(dialog).getByLabelText("Location"), "delhi");
   await user.type(within(dialog).getByLabelText("Latitude"), "-90");
   await user.type(within(dialog).getByLabelText("Longitude"), "180");
   await user.click(within(dialog).getByLabelText("Available for matching"));
@@ -209,7 +212,79 @@ it("registers an unavailable resource without miscounting available resources", 
   );
   expect(await screen.findByText("res-123")).toBeInTheDocument();
   expect(screen.getByLabelText("Available resources")).toHaveTextContent("0");
-  expect(posted[0]).toEqual({ type: "food", location: "delhi", availability: false, coordinates: { latitude: -90, longitude: 180 } });
+  expect(screen.getByText("Pinned location")).toBeInTheDocument();
+  expect(posted[0]).toEqual({ type: "food", availability: false, coordinates: { latitude: -90, longitude: 180 } });
+});
+
+it("submits the device location with a new request only after the user asks", async () => {
+  const position = vi.fn((success: PositionCallback) => success({
+    coords: { latitude: 28.6139, longitude: 77.209 },
+  } as GeolocationPosition));
+  vi.stubGlobal("isSecureContext", true);
+  vi.stubGlobal("navigator", Object.assign(Object.create(navigator), { geolocation: { getCurrentPosition: position } }));
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "New request" }));
+  expect(position).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Use my location" }));
+  fireEvent.change(screen.getByLabelText("Assistance type"), { target: { value: "water" } });
+  fireEvent.change(screen.getByLabelText("Request details"), { target: { value: "Water needed" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create request" }));
+  await waitFor(() => expect(posted[0]).toMatchObject({ coordinates: { latitude: 28.6139, longitude: 77.209 } }));
+});
+
+it("submits the resource pin even when an older device location arrives later", async () => {
+  let receivePosition!: PositionCallback;
+  vi.stubGlobal("isSecureContext", true);
+  vi.stubGlobal("navigator", Object.assign(Object.create(navigator), { geolocation: {
+    getCurrentPosition: (onPosition: PositionCallback) => { receivePosition = onPosition; },
+  } }));
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Add resource" }));
+  fireEvent.click(screen.getByRole("button", { name: "Use my location" }));
+  fireEvent.click(screen.getByRole("region", { name: "Location map" }), { clientX: 50, clientY: 80 });
+  const latitude = (screen.getByLabelText("Latitude") as HTMLInputElement).valueAsNumber;
+  const longitude = (screen.getByLabelText("Longitude") as HTMLInputElement).valueAsNumber;
+  expect(Number.isFinite(latitude) && Number.isFinite(longitude)).toBe(true);
+  act(() => receivePosition({ coords: { latitude: 1, longitude: 2 } } as GeolocationPosition));
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Main gate" } });
+  fireEvent.click(screen.getByRole("button", { name: "Register resource" }));
+  await waitFor(() => expect(posted[0]).toMatchObject({ location: "Main gate", coordinates: { latitude, longitude } }));
+});
+
+it("keeps manual coordinates available when location permission is denied", async () => {
+  vi.stubGlobal("isSecureContext", true);
+  vi.stubGlobal("navigator", Object.assign(Object.create(navigator), { geolocation: {
+    getCurrentPosition: (_: PositionCallback, onError: PositionErrorCallback) => onError({ code: 1 } as GeolocationPositionError),
+  } }));
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Add resource" }));
+  fireEvent.click(screen.getByRole("button", { name: "Use my location" }));
+  expect(screen.getByText(/permission was denied/i)).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Latitude"), { target: { value: "0" } });
+  expect(screen.getByLabelText("Latitude")).toHaveValue(0);
+});
+
+it("uses the final dragged position and allows manual entry if tiles fail", async () => {
+  const added = vi.spyOn(Marker.prototype, "addTo");
+  try {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add resource" }));
+    const map = screen.getByRole("region", { name: "Location map" });
+    fireEvent.click(map, { clientX: 110, clientY: 72 });
+    const marker = added.mock.instances[0];
+    if (!(marker instanceof Marker)) throw new Error("Map click did not create a marker");
+    expect(marker.dragging?.enabled()).toBe(true);
+    act(() => { marker.setLatLng([12.5, 76.25]).fire("dragend"); });
+    expect(screen.getByLabelText("Latitude")).toHaveValue(12.5);
+    expect(screen.getByLabelText("Longitude")).toHaveValue(76.25);
+    fireEvent.error(map.querySelector("img.leaflet-tile")!);
+    expect(screen.getByText(/tiles could not load/i)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Longitude"), { target: { value: "77" } });
+    fireEvent.blur(screen.getByLabelText("Longitude"));
+    expect(screen.getByLabelText("Longitude")).toHaveValue(77);
+  } finally {
+    added.mockRestore();
+  }
 });
 it.each([
   ["91", "0"], ["-91", "0"], ["0", "181"], ["0", "-181"], ["", "0"], ["0", ""],
@@ -218,7 +293,6 @@ it.each([
   render(<App />);
   await user.click(screen.getByRole("button", { name: "Add resource" }));
   const dialog = screen.getByRole("dialog");
-  await user.type(within(dialog).getByLabelText("Location"), "delhi");
   if (latitude) await user.type(within(dialog).getByLabelText("Latitude"), latitude);
   if (longitude) await user.type(within(dialog).getByLabelText("Longitude"), longitude);
   // Exercise the submit boundary even when native constraint validation is bypassed.

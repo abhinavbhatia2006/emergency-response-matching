@@ -58,6 +58,10 @@ def main():
         html = page.read().decode()
         assert 'text/html' in page.headers.get('Content-Type', '')
         assert 'id="root"' in html, 'dashboard root missing'
+        policy = page.headers.get('Content-Security-Policy', '')
+        image_sources = next((parts[1:] for parts in map(str.split, policy.split(';'))
+                              if parts and parts[0] == 'img-src'), [])
+        assert 'https://tile.openstreetmap.org' in image_sources, 'dashboard blocks OpenStreetMap tiles'
     assets = re.findall(r'(?:src|href)="(/assets/[^\"]+)"', html)
     assert assets, 'compiled dashboard assets missing'
     for asset in assets:

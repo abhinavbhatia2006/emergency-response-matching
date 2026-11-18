@@ -1,4 +1,5 @@
 import ShardDetails from "./ShardDetails";
+import LocationPicker from "./LocationPicker";
 import {
   useCallback,
   useEffect,
@@ -38,6 +39,7 @@ type RequestRecord = {
   id: string;
   type: Kind;
   location: string;
+  directions?: string;
   details: string;
   status: "pending" | "matched" | "completed" | "cancelled";
   created_at: string;
@@ -49,6 +51,7 @@ type Resource = {
   id: string;
   type: Kind;
   location: string;
+  directions?: string;
   availability: boolean;
   status: "available" | "unavailable" | "reserved";
   coordinates?: Coordinates;
@@ -278,7 +281,7 @@ export default function App() {
       }
       const body = {
         type: String(data.get("type")),
-        location: String(data.get("location")).trim(),
+        location: String(data.get("location") ?? "").trim() || undefined,
         coordinates: { latitude, longitude },
       };
       if (form === "request") {
@@ -448,7 +451,6 @@ export default function App() {
               <h2><span className="signal-mark" aria-hidden="true">↗</span> Response starts here.</h2>
               <p>
                 New requests connect to the nearest available, same-type resource by straight-line geographic distance.
-                District names are labels; coordinates determine proximity.
                 <span className="matching-limit" aria-label="Matching distance limit">{maxDistance === null ? "Matching limit unavailable" : `${kilometers(maxDistance)} maximum`}</span>
               </p>
             </div>
@@ -598,9 +600,10 @@ export default function App() {
                               </td>
                               <td>
                                 <span className="location">
-                                  {record.location}
+                                  {record.location || "Pinned location"}
                                 </span>
                                 <span className="coordinate-meta">{record.coordinates ? coordinateLabel(record.coordinates) : "District matching · no coordinates"}</span>
+                                {record.directions && <span className="directions-note">Directions: {record.directions}</span>}
                               </td>
                               <td>
                                 <Badge status={record.status} />
@@ -730,7 +733,7 @@ export default function App() {
                 {[
                   {
                     title: "Capture the need",
-                    text: "Choose the assistance type. Add a location label and coordinates.",
+                    text: "Choose the assistance type and pin the location.",
                   },
                   {
                     title: "Connect the right help",
@@ -788,23 +791,11 @@ export default function App() {
               </select>
             </label>
             <label>
-              Location
-              <input
-                name="location"
-                required
-                maxLength={200}
-                placeholder="e.g. Delhi"
-                pattern=".*\S.*"
-              />
+              Name
+              <input name="location" maxLength={200} placeholder="e.g. IIITB main gate" aria-describedby="location-name-help" />
             </label>
-            <p className="field-help" style={{ marginTop: -14 }}>
-              Area or landmark label. Matching uses the coordinates below, even across district names.
-            </p>
-            <fieldset className="coordinate-fields" aria-describedby="coordinate-help">
-              <legend>Geographic coordinates</legend>
-              <label>Latitude<input name="latitude" type="number" required min={-90} max={90} step="any" inputMode="decimal" placeholder="e.g. 28.6139" /></label>
-              <label>Longitude<input name="longitude" type="number" required min={-180} max={180} step="any" inputMode="decimal" placeholder="e.g. 77.2090" /></label>
-            </fieldset>
+            <p id="location-name-help" className="field-help" style={{ marginTop: -10 }}>Optional label for the pin.</p>
+            <LocationPicker />
             <p id="coordinate-help" className="field-help" style={{ marginTop: -10 }}>Use decimal degrees: latitude -90 to 90; longitude -180 to 180. Matching uses straight-line geographic distance. {limitDescription}</p>
             {form === "request" ? (
               <label>
@@ -866,7 +857,7 @@ export default function App() {
                 }}
               >
                 <MapPin size={12} />
-                {selected.location}
+                {selected.location || "Pinned location"}
               </span>
             </div>
             <div className="detail-line">
@@ -874,6 +865,12 @@ export default function App() {
               <span>{new Date(selected.created_at).toLocaleString()}</span>
             </div>
             <p className="detail-copy">{selected.details}</p>
+            {selected.directions && (
+              <div className="detail-line">
+                <span>Landmark or directions</span>
+                <span className="directions-note">{selected.directions}</span>
+              </div>
+            )}
             {selected.coordinates ? <>
               <div className="detail-line"><span>Coordinates (lat, lon)</span><span className="detail-id">{coordinateLabel(selected.coordinates)}</span></div>
               <section className="distance-summary" aria-label="Geographic matching">

@@ -42,4 +42,10 @@ The API is an unauthenticated local demonstration; bind locally or put it behind
 
 ## Coordinate matching
 
+In either creation form, tap the OpenStreetMap map or drag its pin to choose the location. **Use my location** asks the browser for a one-time position, which you can adjust before submitting. Device location requires permission and HTTPS (or localhost for development). Both coordinate fields also accept manual input, including when map tiles cannot load.
+
+**Name** is an optional, user-supplied label for the pin. The dashboard displays it alongside the coordinates, with **Pinned location** as the fallback. The system does not verify that the name corresponds to the coordinates. Geographic matching uses the pin's coordinates.
+
 Creation bodies may include `coordinates: {"latitude": 28.633, "longitude": 77.2167}`; both members are required together. The dashboard requires this object for new records. Coordinate-equipped requests choose the nearest available same-type resource within `MAX_MATCH_DISTANCE_METERS` (default 50000), and matched responses include `distance_meters`. Older coordinate-less clients retain exact-district matching. `GET /config` returns the configured maximum and `distance_method: "haversine"`. See [geographic matching](geographic-matching.md).
+
+When coordinates are supplied, `location` may be omitted. Such records return an empty `location` and display **Pinned location** in the dashboard. Both create endpoints accept an optional `directions` string of up to 200 characters. Directions are saved with the record for people reading it. Matching uses coordinates or, for older coordinate-less requests, the district label.

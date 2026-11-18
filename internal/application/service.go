@@ -123,13 +123,17 @@ func jobMutation(requestID string) (storage.Mutation, error) {
 	return put("job/"+id, Job{ID: id, RequestID: requestID}, 0), nil
 }
 func (s *Service) CreateRequest(ctx context.Context, kind, location, details string, coordinates ...*domain.Coordinates) (domain.Request, error) {
-	r, e := domain.NewRequest(kind, location, details, time.Now())
-	if e != nil {
-		return r, e
-	}
-	r.Coordinates, e = copyCoordinates(coordinates)
+	point, e := copyCoordinates(coordinates)
 	if e != nil {
 		return domain.Request{}, e
+	}
+	return s.createRequest(ctx, kind, domain.LocationInput{Label: location, Coordinates: point}, details)
+}
+
+func (s *Service) createRequest(ctx context.Context, kind string, location domain.LocationInput, details string) (domain.Request, error) {
+	r, e := domain.NewRequestAt(kind, location, details, time.Now())
+	if e != nil {
+		return r, e
 	}
 	j, e := jobMutation(r.ID)
 	if e != nil {
@@ -189,13 +193,17 @@ func (s *Service) ListResources(ctx context.Context) ([]domain.Resource, error) 
 	return out, nil
 }
 func (s *Service) CreateResource(ctx context.Context, kind, location string, available bool, coordinates ...*domain.Coordinates) (domain.Resource, error) {
-	r, e := domain.NewResource(kind, location, available)
-	if e != nil {
-		return r, e
-	}
-	r.Coordinates, e = copyCoordinates(coordinates)
+	point, e := copyCoordinates(coordinates)
 	if e != nil {
 		return domain.Resource{}, e
+	}
+	return s.createResource(ctx, kind, domain.LocationInput{Label: location, Coordinates: point}, available)
+}
+
+func (s *Service) createResource(ctx context.Context, kind string, location domain.LocationInput, available bool) (domain.Resource, error) {
+	r, e := domain.NewResourceAt(kind, location, available)
+	if e != nil {
+		return r, e
 	}
 	ms := []storage.Mutation{put("resource/"+r.ID, r, 0)}
 	if available {

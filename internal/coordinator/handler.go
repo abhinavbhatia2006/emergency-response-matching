@@ -61,6 +61,14 @@ func (c *Coordinator) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
 	mux.HandleFunc("GET /internal/nodes", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, c.Nodes()) })
+	mux.HandleFunc("GET /internal/shard-counts", func(w http.ResponseWriter, r *http.Request) {
+		counts, err := c.recordCounts(r.Context())
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, counts)
+	})
 	register := func(w http.ResponseWriter, r *http.Request) {
 		var input struct {
 			ID string `json:"id"`

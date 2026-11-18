@@ -81,6 +81,7 @@ func (s *Service) Handler() http.Handler {
 		var in struct {
 			Type        string          `json:"type"`
 			Location    string          `json:"location"`
+			Directions  string          `json:"directions"`
 			Details     string          `json:"details"`
 			Coordinates json.RawMessage `json:"coordinates"`
 		}
@@ -92,7 +93,8 @@ func (s *Service) Handler() http.Handler {
 			failure(w, e)
 			return
 		}
-		out, e := s.CreateRequest(r.Context(), in.Type, in.Location, in.Details, coordinates)
+		location := domain.LocationInput{Label: in.Location, Coordinates: coordinates, Directions: in.Directions}
+		out, e := s.createRequest(r.Context(), in.Type, location, in.Details)
 		if e != nil {
 			failure(w, e)
 			return
@@ -134,6 +136,7 @@ func (s *Service) Handler() http.Handler {
 		var in struct {
 			Type         string          `json:"type"`
 			Location     string          `json:"location"`
+			Directions   string          `json:"directions"`
 			Availability *bool           `json:"availability"`
 			Coordinates  json.RawMessage `json:"coordinates"`
 		}
@@ -149,7 +152,8 @@ func (s *Service) Handler() http.Handler {
 			failure(w, e)
 			return
 		}
-		out, e := s.CreateResource(r.Context(), in.Type, in.Location, *in.Availability, coordinates)
+		location := domain.LocationInput{Label: in.Location, Coordinates: coordinates, Directions: in.Directions}
+		out, e := s.createResource(r.Context(), in.Type, location, *in.Availability)
 		if e != nil {
 			failure(w, e)
 			return

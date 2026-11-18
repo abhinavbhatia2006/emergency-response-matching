@@ -132,6 +132,17 @@ func (s *Store) Records() ([]Record, error) {
 	return result, nil
 }
 
+// LiveKeys returns the keys of non-deleted records from one database snapshot.
+func (s *Store) LiveKeys(ctx context.Context) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	rows, err := s.pool.Query(ctx, `SELECT key FROM records WHERE NOT deleted`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
 // beginMutation serializes writers across all pools/processes while allowing
 // MVCC readers to see the previous committed record set until commit.
 func (s *Store) beginMutation(ctx context.Context) (pgx.Tx, error) {

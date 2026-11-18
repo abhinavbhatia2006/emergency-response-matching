@@ -1,6 +1,8 @@
 package coordinator
 
 import (
+	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -48,6 +50,50 @@ func TestHTTPContracts(t *testing.T) {
 		}
 		if !strings.HasPrefix(resp.Header.Get("Content-Type"), "application/json") {
 			t.Errorf("non-JSON response %s", tc.path)
+		}
+	}
+}
+
+func TestShardCountsReportLiveLogicalRecords(t *testing.T) {
+	c, peers, _ := setup(t)
+	ctx := context.Background()
+	// These namespaced keys hash to shards 0, 1 and 2 respectively.
+	for _, key := range []string{"request/b", "resource/c", "request/d", "job/1"} {
+		if _, err := c.Put(ctx, key, json.RawMessage(`{}`), 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := c.Delete(ctx, "request/d", 1); err != nil {
+		t.Fatal(err)
+	}
+	// An outage on both copies does not change the logical total.
+	peers[0].fail(true)
+	peers[1].fail(true)
+	handler := c.Handler()
+	const path = "/internal/shard-counts"
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+	if rec.Code != 401 {
+		t.Fatalf("unauthenticated count status = %d", rec.Code)
+	}
+	req := httptest.NewRequest("GET", path, nil)
+	req.Header.Set("Authorization", "Bearer test-secret")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("count status = %d: %s", rec.Code, rec.Body)
+	}
+	var got []map[string]int
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	want := [3][2]int{{1, 0}, {0, 1}, {0, 0}}
+	if len(got) != len(want) {
+		t.Fatalf("counts = %v", got)
+	}
+	for i, counts := range got {
+		if len(counts) != 2 || [2]int{counts["requests"], counts["resources"]} != want[i] {
+			t.Fatalf("shard %d counts = %v, want %v", i, counts, want[i])
 		}
 	}
 }

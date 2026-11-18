@@ -6,8 +6,58 @@ import (
 	"github.com/abhinavbhatia2006/emergency-response-matching/internal/domain"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
+
+func TestPinnedCreationStoresDirectionsSeparately(t *testing.T) {
+	service, _ := geoFixture(t, nil)
+	handler := service.Handler()
+	call := func(method, path, body string, status int) []byte {
+		t.Helper()
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest(method, path, strings.NewReader(body)))
+		if w.Code != status {
+			t.Fatalf("%s %s returned %d, want %d: %s", method, path, w.Code, status, w.Body)
+		}
+		return w.Body.Bytes()
+	}
+
+	var request map[string]any
+	body := `{"type":"water","coordinates":{"latitude":28.62,"longitude":77.2},"details":"Water needed","directions":" Gate 2 "}`
+	if err := json.Unmarshal(call("POST", "/requests", body, 201), &request); err != nil {
+		t.Fatal(err)
+	}
+	requestID, _ := request["id"].(string)
+	request = nil
+	if err := json.Unmarshal(call("GET", "/requests/"+requestID, "", 200), &request); err != nil {
+		t.Fatal(err)
+	}
+	if request["location"] != "" || request["directions"] != "Gate 2" {
+		t.Fatalf("saved request location and directions: %v", request)
+	}
+
+	var resource map[string]any
+	body = `{"type":"water","coordinates":{"latitude":28.61,"longitude":77.2},"availability":true,"directions":"North entrance"}`
+	if err := json.Unmarshal(call("POST", "/resources", body, 201), &resource); err != nil {
+		t.Fatal(err)
+	}
+	if resource["location"] != "" || resource["directions"] != "North entrance" {
+		t.Fatalf("saved resource location and directions: %v", resource)
+	}
+	var matched domain.Request
+	path := "/match/" + requestID
+	if err := json.Unmarshal(call("POST", path, "", 200), &matched); err != nil {
+		t.Fatal(err)
+	}
+	if matched.ResourceID != resource["id"] || matched.DistanceMeters == nil || *matched.DistanceMeters < 1100 || *matched.DistanceMeters > 1120 {
+		t.Fatalf("match did not use the pinned coordinates: %+v", matched)
+	}
+	call("POST", "/requests", `{"type":"water","details":"No location or coordinates"}`, 400)
+	call("POST", "/resources", `{"type":"water","availability":true}`, 400)
+	body = strings.Replace(body, "North entrance", strings.Repeat("x", 201), 1)
+	call("POST", "/resources", body, 400)
+}
 
 func TestPublicAPIContract(t *testing.T) {
 	s := serviceTest(t)

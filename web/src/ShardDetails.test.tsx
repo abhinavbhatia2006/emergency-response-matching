@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import ShardDetails from "./ShardDetails";
 
-const topology = { shards: [{ id: 0, nodes: [
+const topology = { shards: [{ id: 0, counts: { requests: 2, resources: 0 }, nodes: [
   { id: "shard-0-primary", ready: true, last_heartbeat: "2026-11-18T12:00:00Z" },
   { id: "shard-0-replica", ready: false, last_heartbeat: null },
 ] }] };
@@ -14,12 +14,22 @@ it("shows live shard identities, coordinator readiness and missing heartbeat hon
   render(<ShardDetails />);
   expect(screen.getByText("Loading shard details…")).toBeInTheDocument();
   expect(await screen.findByRole("heading", { name: "Shard 0" })).toBeInTheDocument();
+  expect(screen.getByText("Requests").closest("div")).toHaveTextContent("Requests2");
+  expect(screen.getByText("Resources").closest("div")).toHaveTextContent("Resources0");
   const primary = screen.getByText("shard-0-primary").closest("li")!;
   expect(within(primary).getByText("Ready")).toBeInTheDocument();
   const replica = screen.getByText("shard-0-replica").closest("li")!;
   expect(within(replica).getByText("Not ready")).toBeInTheDocument();
   expect(within(replica).getByText("No heartbeat recorded")).toBeInTheDocument();
   expect(fetch).toHaveBeenCalledWith("/development/shards", expect.any(Object));
+});
+
+it("shows node health when journal counts are unavailable", async () => {
+  const [shard] = topology.shards;
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ shards: [{ ...shard, counts: null }] })));
+  render(<ShardDetails />);
+  expect(await screen.findByText("Record counts unavailable")).toBeInTheDocument();
+  expect(within(screen.getByText("shard-0-primary").closest("li")!).getByText("Ready")).toBeInTheDocument();
 });
 
 it("clears stale ready nodes on failure and refreshes successfully", async () => {
