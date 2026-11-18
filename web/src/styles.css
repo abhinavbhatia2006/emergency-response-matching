@@ -158,3 +158,10 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding-top: 
 .matching-limit { display: block; margin-top: 4px; color: var(--signal); font: 10px/1.6 var(--mono); }
 .legacy-note { font: 11px/1.7 var(--mono); color: #6b5c37; background: #eae3cf; border-left: 2px solid #a08b5f; padding: 11px 13px; }
 @media (max-width: 580px) { .table-wrap table { min-width: 430px; } .coordinate-meta { max-width: 150px; } .coordinate-fields { gap: 10px; } }
+
+.shard-details { padding: 24px; }
+.shard-group { margin-top: 24px; border-top: 1px solid #c9c6ba; padding-top: 16px; }
+.shard-group ul { list-style: none; padding: 0; }
+.shard-group li { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid #dedacd; overflow-wrap: anywhere; }
+.shard-group li > span:last-child { flex-basis: 100%; font-size: 12px; }
+.tabs { flex-wrap: wrap; }

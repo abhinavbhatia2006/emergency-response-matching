@@ -58,4 +58,6 @@ This project is a demonstration system, not an operational emergency dispatch se
 
 ## Application
 
+The dashboard includes a read-only **Shard details** development tab showing live coordinator-reported node readiness and heartbeats. Follow the [demonstration guide](docs/demonstration.md) to verify shard distribution, storage failover, recovery, concurrent matching and Kubernetes scaling.
+
 See the [API and React dashboard guide](docs/application.md) and [matching worker guide](docs/messaging.md) for setup, endpoints, delivery guarantees and capacity limits. The API serves compiled frontend assets from `web/dist`; build them with `npm ci && npm run build` inside `web`. The worker requires `RABBITMQ_URL`.
