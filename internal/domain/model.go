@@ -49,6 +49,7 @@ type Request struct {
 	ID             string        `json:"id"`
 	Type           Type          `json:"type"`
 	Location       string        `json:"location"`
+	Directions     string        `json:"directions,omitempty"`
 	Details        string        `json:"details"`
 	Status         RequestStatus `json:"status"`
 	CreatedAt      time.Time     `json:"created_at"`
@@ -59,24 +60,44 @@ type Resource struct {
 	ID           string         `json:"id"`
 	Type         Type           `json:"type"`
 	Location     string         `json:"location"`
+	Directions   string         `json:"directions,omitempty"`
 	Availability bool           `json:"availability"`
 	Status       ResourceStatus `json:"status"`
 }
 
-func normalize(kind, location string) (Type, string, error) {
-	if !utf8.ValidString(location) {
-		return "", "", fmt.Errorf("%w: location must be valid UTF-8", ErrInvalid)
-	}
+type LocationInput struct {
+	Label       string
+	Coordinates *Coordinates
+	Directions  string
+}
+
+func normalize(kind string, location LocationInput) (Type, LocationInput, error) {
 	t := Type(strings.ToLower(strings.TrimSpace(kind)))
 	switch t {
 	case Food, Water, Medicine, Transportation, Shelter:
 	default:
-		return "", "", fmt.Errorf("%w: unsupported type", ErrInvalid)
+		return "", LocationInput{}, fmt.Errorf("%w: unsupported type", ErrInvalid)
 	}
-	location = strings.ToLower(strings.TrimSpace(location))
-	if !utf8.ValidString(location) || location == "" || utf8.RuneCountInString(location) > 200 {
-		return "", "", fmt.Errorf("%w: location must contain 1-200 characters", ErrInvalid)
+	location.Label = strings.TrimSpace(location.Label)
+	if !utf8.ValidString(location.Label) || utf8.RuneCountInString(location.Label) > 200 {
+		return "", LocationInput{}, fmt.Errorf("%w: location name must contain at most 200 characters", ErrInvalid)
 	}
+	location.Label = strings.ToLower(location.Label)
+	location.Directions = strings.TrimSpace(location.Directions)
+	if !utf8.ValidString(location.Directions) || utf8.RuneCountInString(location.Directions) > 200 {
+		return "", LocationInput{}, fmt.Errorf("%w: directions must contain at most 200 characters", ErrInvalid)
+	}
+	if location.Coordinates == nil {
+		if location.Label == "" || location.Directions != "" {
+			return "", LocationInput{}, fmt.Errorf("%w: a district is required without coordinates, and directions require coordinates", ErrInvalid)
+		}
+		return t, location, nil
+	}
+	point := *location.Coordinates
+	if err := point.Validate(); err != nil {
+		return "", LocationInput{}, err
+	}
+	location.Coordinates = &point
 	return t, location, nil
 }
 
@@ -88,7 +109,7 @@ func newID() (string, error) {
 	return hex.EncodeToString(b[:]), nil
 }
 
-func NewRequest(kind, location, details string, now time.Time) (Request, error) {
+func NewRequest(kind string, location LocationInput, details string, now time.Time) (Request, error) {
 	t, location, err := normalize(kind, location)
 	if err != nil {
 		return Request{}, err
@@ -101,10 +122,10 @@ func NewRequest(kind, location, details string, now time.Time) (Request, error) 
 	if err != nil {
 		return Request{}, err
 	}
-	return Request{ID: id, Type: t, Location: location, Details: details, Status: Pending, CreatedAt: now.UTC()}, nil
+	return Request{ID: id, Type: t, Location: location.Label, Directions: location.Directions, Coordinates: location.Coordinates, Details: details, Status: Pending, CreatedAt: now.UTC()}, nil
 }
 
-func NewResource(kind, location string, available bool) (Resource, error) {
+func NewResource(kind string, location LocationInput, available bool) (Resource, error) {
 	t, location, err := normalize(kind, location)
 	if err != nil {
 		return Resource{}, err
@@ -117,7 +138,7 @@ func NewResource(kind, location string, available bool) (Resource, error) {
 	if available {
 		status = Available
 	}
-	return Resource{ID: id, Type: t, Location: location, Availability: available, Status: status}, nil
+	return Resource{ID: id, Type: t, Location: location.Label, Directions: location.Directions, Coordinates: location.Coordinates, Availability: available, Status: status}, nil
 }
 
 // Transition validates lifecycle changes. The caller persists the change and
@@ -141,16 +162,20 @@ func (r *Request) Transition(next RequestStatus) error {
 	return nil
 }
 
-// SelectResource returns a candidate without reserving it or changing inputs.
-// Stored entities must have been validated and normalized at creation.
+// SelectResource selects an available resource for a legacy district request.
+// Stored locations have already been normalized.
 func SelectResource(request Request, resources []Resource) (Resource, error) {
 	if request.Status != Pending {
 		return Resource{}, fmt.Errorf("%w: matching requires a pending request", ErrInvalid)
 	}
 	var selected Resource
-	for _, r := range resources {
-		if r.ID != "" && r.Type == request.Type && r.Location == request.Location && r.Availability && r.Status == Available && (selected.ID == "" || r.ID < selected.ID) {
-			selected = r
+	for _, resource := range resources {
+		if resource.ID == "" || resource.Type != request.Type || resource.Location != request.Location ||
+			!resource.Availability || resource.Status != Available {
+			continue
+		}
+		if selected.ID == "" || resource.ID < selected.ID {
+			selected = resource
 		}
 	}
 	if selected.ID == "" {

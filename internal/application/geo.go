@@ -7,22 +7,8 @@ import (
 	"github.com/abhinavbhatia2006/emergency-response-matching/internal/domain"
 )
 
-func copyCoordinates(values []*domain.Coordinates) (*domain.Coordinates, error) {
-	if len(values) > 1 {
-		return nil, domain.ErrInvalid
-	}
-	if len(values) == 0 || values[0] == nil {
-		return nil, nil
-	}
-	copy := *values[0]
-	if err := copy.Validate(); err != nil {
-		return nil, err
-	}
-	return &copy, nil
-}
-
-// Omission preserves legacy input; a supplied coordinate object requires both
-// numeric members. Pointer fields distinguish valid zero from missing/null.
+// An omitted coordinate object preserves the district API. An explicit object
+// must contain both numbers, and an explicit null is invalid.
 func decodeCoordinates(raw json.RawMessage) (*domain.Coordinates, error) {
 	if len(raw) == 0 {
 		return nil, nil
@@ -36,11 +22,9 @@ func decodeCoordinates(raw json.RawMessage) (*domain.Coordinates, error) {
 	if decoder.Decode(&input) != nil || input.Latitude == nil || input.Longitude == nil {
 		return nil, domain.ErrInvalid
 	}
-	return copyCoordinates([]*domain.Coordinates{{Latitude: *input.Latitude, Longitude: *input.Longitude}})
+	return &domain.Coordinates{Latitude: *input.Latitude, Longitude: *input.Longitude}, nil
 }
 
-// Legacy requests retain district matching. Coordinate requests never fall
-// back to a district or to resources without coordinates.
 func (s *Service) selectResource(request domain.Request, resources []domain.Resource) (domain.Resource, *float64, error) {
 	if request.Coordinates == nil {
 		resource, err := domain.SelectResource(request, resources)

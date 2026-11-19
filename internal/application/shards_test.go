@@ -25,10 +25,18 @@ func TestShardDetailsSanitizedLiveTopology(t *testing.T) {
 	calls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		if r.Method != "GET" || r.URL.Path != "/internal/nodes" || r.Header.Get("Authorization") != "Bearer private-token" {
+		if r.Method != "GET" || r.Header.Get("Authorization") != "Bearer private-token" {
 			t.Errorf("unexpected upstream request")
 		}
-		_, _ = w.Write([]byte(shardFixture()))
+		switch r.URL.Path {
+		case "/internal/nodes":
+			_, _ = w.Write([]byte(shardFixture()))
+		case "/internal/shard-counts":
+			_, _ = w.Write([]byte(`[{"requests":4,"resources":1},{"requests":0,"resources":0},{"requests":2,"resources":3}]`))
+		default:
+			t.Error("unexpected upstream path")
+			w.WriteHeader(404)
+		}
 	}))
 	defer upstream.Close()
 	s, e := New(upstream.URL, "private-token")
@@ -40,7 +48,7 @@ func TestShardDetailsSanitizedLiveTopology(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
-	if calls != 1 || rec.Header().Get("Cache-Control") != "no-store" {
+	if calls != 2 || rec.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal("missing live read or no-store")
 	}
 	body := rec.Body.String()
@@ -49,7 +57,11 @@ func TestShardDetailsSanitizedLiveTopology(t *testing.T) {
 	}
 	var result struct {
 		Shards []struct {
-			ID    int `json:"id"`
+			ID     int `json:"id"`
+			Counts *struct {
+				Requests  int `json:"requests"`
+				Resources int `json:"resources"`
+			} `json:"counts"`
 			Nodes []struct {
 				ID        string  `json:"id"`
 				Ready     bool    `json:"ready"`
@@ -67,14 +79,35 @@ func TestShardDetailsSanitizedLiveTopology(t *testing.T) {
 		if shard.ID != i || len(shard.Nodes) != 2 || shard.Nodes[0].ID != fmt.Sprintf("shard-%d-primary", i) || !shard.Nodes[0].Ready || shard.Nodes[1].Ready {
 			t.Fatal(body)
 		}
+		expected := [3][2]int{{4, 1}, {0, 0}, {2, 3}}
+		if shard.Counts == nil || [2]int{shard.Counts.Requests, shard.Counts.Resources} != expected[i] {
+			t.Fatalf("shard %d counts: %s", i, body)
+		}
 	}
 	if result.Shards[2].Nodes[1].Heartbeat != nil {
 		t.Fatal("never-seen heartbeat must be null")
 	}
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, httptest.NewRequest("POST", "/development/shards", nil))
-	if rec.Code != 405 || calls != 1 {
+	if rec.Code != 405 || calls != 2 {
 		t.Fatal("development endpoint must be read-only")
+	}
+}
+
+func TestShardDetailsKeepsHealthWhenCountsUnavailable(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/internal/nodes" {
+			_, _ = w.Write([]byte(shardFixture()))
+			return
+		}
+		w.WriteHeader(503)
+	}))
+	defer upstream.Close()
+	service, _ := New(upstream.URL, "private-token")
+	rec := httptest.NewRecorder()
+	service.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/development/shards", nil))
+	if rec.Code != 200 || strings.Count(rec.Body.String(), `"counts":null`) != 3 || !strings.Contains(rec.Body.String(), `"ready":true`) {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

@@ -24,6 +24,7 @@ def main():
         parser.error('count must be 1-20 and timeout must be positive')
     base = args.url.rstrip('/')
     area = 'smoke-' + uuid.uuid4().hex[:12]
+    coordinates = {'latitude': 35.6762, 'longitude': 139.6503}
 
     def call(method, path, body=None, expected=200):
         payload = None if body is None else json.dumps(body).encode()
@@ -58,6 +59,10 @@ def main():
         html = page.read().decode()
         assert 'text/html' in page.headers.get('Content-Type', '')
         assert 'id="root"' in html, 'dashboard root missing'
+        policy = page.headers.get('Content-Security-Policy', '')
+        image_sources = next((parts[1:] for parts in map(str.split, policy.split(';'))
+                              if parts and parts[0] == 'img-src'), [])
+        assert 'https://tile.openstreetmap.org' in image_sources, 'dashboard blocks OpenStreetMap tiles'
     assets = re.findall(r'(?:src|href)="(/assets/[^\"]+)"', html)
     assert assets, 'compiled dashboard assets missing'
     for asset in assets:
@@ -66,17 +71,20 @@ def main():
             assert 'text/html' not in response.headers.get('Content-Type', ''), f'asset returned HTML: {asset}'
     print('PASS: storage readiness and compiled React assets', flush=True)
 
-    resources = [call('POST', '/resources', {'type': 'food', 'location': area, 'availability': True}, 201)
+    resources = [call('POST', '/resources', {
+        'type': 'food', 'location': area, 'coordinates': coordinates, 'availability': True}, 201)
                  for _ in range(args.count)]
     with ThreadPoolExecutor(max_workers=min(args.count, 6)) as pool:
         requests = list(pool.map(lambda i: call('POST', '/requests', {
-            'type': 'food', 'location': area, 'details': f'Deployment verification {i}'}, 201), range(args.count)))
+            'type': 'food', 'location': f'{area}-request', 'coordinates': coordinates,
+            'details': f'Deployment verification {i}'}, 201), range(args.count)))
     wait(lambda: all(call('GET', '/requests/' + r['id'])['status'] == 'matched' for r in requests),
          'RabbitMQ asynchronous assignment')
     matched = [call('GET', '/requests/' + r['id']) for r in requests]
     ids = [r['resource_id'] for r in matched]
     assert len(set(ids)) == args.count, 'resource assigned more than once'
     assert set(ids) == {r['id'] for r in resources}
+    assert all(r['distance_meters'] == 0 for r in matched), 'expected zero distance at shared coordinates'
     print(f'PASS: {args.count} concurrent requests matched asynchronously without double booking', flush=True)
 
     first = matched[0]
@@ -88,10 +96,24 @@ def main():
     listed = call('GET', '/resources')
     used = next(r for r in listed if r['id'] == first['resource_id'])
     assert used['status'] == 'unavailable' and not used['availability']
-    pending = call('POST', '/requests', {'type': 'medicine', 'location': area, 'details': 'No matching resource'}, 201)
+    pending = call('POST', '/requests', {
+        'type': 'medicine', 'location': area, 'coordinates': coordinates, 'details': 'No matching resource'}, 201)
     call('POST', '/match/' + pending['id'], expected=409)
     assert call('PUT', '/requests/' + pending['id'] + '/status', {'status': 'cancelled'})['status'] == 'cancelled'
-    call('POST', '/resources', {'type': 'food', 'location': area}, 400)
+    call('POST', '/resources', {'type': 'food', 'location': area, 'coordinates': coordinates}, 400)
+    call('POST', '/requests', {'type': 'food', 'location': area,
+                              'coordinates': None, 'details': 'Invalid coordinates'}, 400)
+    district = area + '-legacy'
+    legacy_resource = call('POST', '/resources', {
+        'type': 'water', 'location': district, 'availability': True}, 201)
+    legacy_request = call('POST', '/requests', {
+        'type': 'water', 'location': district, 'details': 'Existing district API contract'}, 201)
+    wait(lambda: call('GET', '/requests/' + legacy_request['id'])['status'] == 'matched',
+         'legacy district assignment')
+    legacy_match = call('POST', '/match/' + legacy_request['id'])
+    assert legacy_match['resource_id'] == legacy_resource['id']
+    assert 'coordinates' not in legacy_match and 'distance_meters' not in legacy_match
+    call('PUT', '/requests/' + legacy_request['id'] + '/status', {'status': 'completed'})
     call('GET', '/requests/' + '0' * 32, expected=404)
     print('PASS: idempotent match, lifecycle, resource reservation, and error contracts', flush=True)
     print(json.dumps({'url': base, 'location': area, 'request_ids': [r['id'] for r in requests],

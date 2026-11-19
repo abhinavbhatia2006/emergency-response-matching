@@ -89,7 +89,16 @@ func geoResource(id, location string, latitude float64) domain.Resource {
 	return domain.Resource{ID: id, Type: domain.Food, Location: location, Availability: true, Status: domain.Available, Coordinates: &domain.Coordinates{Latitude: latitude, Longitude: 0}}
 }
 func TestGeoNearestCrossDistrictAndPersistence(t *testing.T) {
-	s, writes := geoFixture(t, []domain.Resource{geoResource("far", "district-a", 0.4), geoResource("near", "district-b", 0.1)})
+	wrongType := geoResource("wrong-type", "district-a", 0)
+	wrongType.Type = domain.Water
+	unavailable := geoResource("unavailable", "district-a", 0)
+	unavailable.Availability = false
+	reserved := geoResource("reserved", "district-a", 0)
+	reserved.Status = domain.Reserved
+	s, writes := geoFixture(t, []domain.Resource{
+		wrongType, unavailable, reserved,
+		geoResource("far", "district-a", 0.4), geoResource("near", "district-b", 0.1),
+	})
 	got, e := s.Match(context.Background(), geoRequestID)
 	if e != nil || got.ResourceID != "near" {
 		t.Fatalf("match=%+v err=%v", got, e)
@@ -187,7 +196,7 @@ func TestGeoRescanAndConcurrentReservation(t *testing.T) {
 		t.Fatalf("rescan=%+v error=%v", got, e)
 	}
 	s, _ = geoFixture(t, []domain.Resource{geoResource("r", "other", 0.1)})
-	second, e := s.CreateRequest(context.Background(), "food", "different", "meal", &domain.Coordinates{})
+	second, e := s.CreateRequest(context.Background(), "food", domain.LocationInput{Label: "different", Coordinates: &domain.Coordinates{}}, "meal")
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -227,11 +236,12 @@ func TestGeoInvalidStoredCoordinatesFailClosed(t *testing.T) {
 func TestGeoCreationCopiesAndValidatesCoordinates(t *testing.T) {
 	s, writes := geoFixture(t, nil)
 	c := &domain.Coordinates{}
-	req, e := s.CreateRequest(context.Background(), "food", "a", "meal", c)
+	location := domain.LocationInput{Label: "a", Coordinates: c}
+	req, e := s.CreateRequest(context.Background(), "food", location, "meal")
 	if e != nil {
 		t.Fatal(e)
 	}
-	resource, e := s.CreateResource(context.Background(), "food", "b", true, c)
+	resource, e := s.CreateResource(context.Background(), "food", location, true)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -241,10 +251,11 @@ func TestGeoCreationCopiesAndValidatesCoordinates(t *testing.T) {
 	}
 	before := len(*writes)
 	for _, bad := range []*domain.Coordinates{{Latitude: 91}, {Longitude: 181}, {Latitude: math.NaN()}, {Longitude: math.Inf(1)}} {
-		if _, e := s.CreateRequest(context.Background(), "food", "a", "meal", bad); !errors.Is(e, domain.ErrInvalid) {
+		location.Coordinates = bad
+		if _, e := s.CreateRequest(context.Background(), "food", location, "meal"); !errors.Is(e, domain.ErrInvalid) {
 			t.Fatal(e)
 		}
-		if _, e := s.CreateResource(context.Background(), "food", "a", true, bad); !errors.Is(e, domain.ErrInvalid) {
+		if _, e := s.CreateResource(context.Background(), "food", location, true); !errors.Is(e, domain.ErrInvalid) {
 			t.Fatal(e)
 		}
 	}
@@ -259,20 +270,23 @@ func TestCoordinateHTTPInput(t *testing.T) {
 			status      int
 		}{
 			{`{"latitude":0,"longitude":0}`, 201}, {`{"latitude":90,"longitude":-180}`, 201},
-			{`{"latitude":1}`, 400}, {`{"longitude":1}`, 400}, {`null`, 400},
+			{"", 201}, {`{"latitude":1}`, 400}, {`{"longitude":1}`, 400}, {`null`, 400},
 			{`{"latitude":null,"longitude":1}`, 400}, {`{"latitude":1,"longitude":null}`, 400},
 			{`{"latitude":91,"longitude":0}`, 400}, {`{"latitude":0,"longitude":181}`, 400},
 			{`{"latitude":0,"longitude":0,"extra":1}`, 400},
 		} {
 			t.Run(endpoint+tc.coordinates, func(t *testing.T) {
 				s, writes := geoFixture(t, nil)
-				body := `{"type":"food","location":"district-a",`
+				body := `{"type":"food","location":"district-a"`
 				if endpoint == "requests" {
-					body += `"details":"meal",`
+					body += `,"details":"meal"`
 				} else {
-					body += `"availability":true,`
+					body += `,"availability":true`
 				}
-				body += `"coordinates":` + tc.coordinates + `}`
+				if tc.coordinates != "" {
+					body += `,"coordinates":` + tc.coordinates
+				}
+				body += `}`
 				w := httptest.NewRecorder()
 				s.Handler().ServeHTTP(w, httptest.NewRequest("POST", "/"+endpoint, strings.NewReader(body)))
 				if w.Code != tc.status {
@@ -282,9 +296,11 @@ func TestCoordinateHTTPInput(t *testing.T) {
 					var out struct {
 						Coordinates *domain.Coordinates `json:"coordinates"`
 					}
-					json.Unmarshal(w.Body.Bytes(), &out)
-					if out.Coordinates == nil || len(*writes) != 2 {
-						t.Fatal("coordinates or atomic job missing")
+					if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+						t.Fatal(err)
+					}
+					if (out.Coordinates == nil) != (tc.coordinates == "") || len(*writes) != 2 {
+						t.Fatal("unexpected saved coordinates or missing atomic job")
 					}
 				} else if len(*writes) != 0 {
 					t.Fatal("invalid input persisted")
@@ -324,26 +340,37 @@ func TestGeoCASConflictRecomputesSelectionAndDistance(t *testing.T) {
 	}
 }
 
-func TestGeoLegacyRequestRetainsDistrictMatching(t *testing.T) {
-	s, _ := geoFixture(t, []domain.Resource{geoResource("near-other", "other", 0), geoResource("far-local", "district-a", 80)})
-	request, err := s.CreateRequest(context.Background(), "food", "district-a", "legacy meal")
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := s.Match(context.Background(), request.ID)
-	if err != nil || got.ResourceID != "far-local" || got.DistanceMeters != nil {
-		t.Fatalf("legacy match=%+v error=%v", got, err)
+func TestGeoLegacyDistrictMatching(t *testing.T) {
+	for _, trigger := range []string{geoRequestID, "rescan"} {
+		t.Run(trigger, func(t *testing.T) {
+			s, _ := geoFixture(t, []domain.Resource{
+				geoResource("near-other", "other", 0),
+				geoResource("far-local", "district-a", 80),
+			})
+			ctx := context.Background()
+			request := domain.Request{ID: geoRequestID, Type: domain.Food, Location: "district-a", Status: domain.Pending}
+			if err := s.batch(ctx, []storage.Mutation{put("request/"+request.ID, request, 1)}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.Match(ctx, trigger); err != nil {
+				t.Fatal(err)
+			}
+			got, err := s.GetRequest(ctx, request.ID)
+			if err != nil || got.Status != domain.Matched || got.ResourceID != "far-local" || got.DistanceMeters != nil {
+				t.Fatalf("legacy match=%+v error=%v", got, err)
+			}
+		})
 	}
 }
 
 func TestGeoPostgresLifecycle(t *testing.T) {
 	s := serviceTest(t)
 	ctx := context.Background()
-	resource, err := s.CreateResource(ctx, "food", "other", true, &domain.Coordinates{Latitude: 0.1})
+	resource, err := s.CreateResource(ctx, "food", domain.LocationInput{Label: "other", Coordinates: &domain.Coordinates{Latitude: 0.1}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	request, err := s.CreateRequest(ctx, "food", "district-a", "meal", &domain.Coordinates{})
+	request, err := s.CreateRequest(ctx, "food", domain.LocationInput{Label: "district-a", Coordinates: &domain.Coordinates{}}, "meal")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -14,8 +14,14 @@ type developmentNode struct {
 	Heartbeat *time.Time `json:"last_heartbeat"`
 }
 type developmentShard struct {
-	ID    int               `json:"id"`
-	Nodes []developmentNode `json:"nodes"`
+	ID     int                     `json:"id"`
+	Nodes  []developmentNode       `json:"nodes"`
+	Counts *developmentShardCounts `json:"counts"`
+}
+
+type developmentShardCounts struct {
+	Requests  *int `json:"requests"`
+	Resources *int `json:"resources"`
 }
 
 func (s *Service) shardDetails(w http.ResponseWriter, r *http.Request) {
@@ -51,6 +57,14 @@ func (s *Service) shardDetails(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		sort.Slice(shards[i].Nodes, func(a, b int) bool { return shards[i].Nodes[a].ID < shards[i].Nodes[b].ID })
+	}
+	var counts []developmentShardCounts
+	if err := s.call(ctx, http.MethodGet, "/internal/shard-counts", nil, &counts); err == nil && len(counts) == len(shards) {
+		for i, count := range counts {
+			if count.Requests != nil && count.Resources != nil && *count.Requests >= 0 && *count.Resources >= 0 {
+				shards[i].Counts = &counts[i]
+			}
+		}
 	}
 	respond(w, 200, struct {
 		Shards []developmentShard `json:"shards"`

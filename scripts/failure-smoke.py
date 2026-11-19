@@ -43,10 +43,12 @@ def main():
         for byte in key.encode(): value=((value^byte)*16777619)&0xffffffff
         return value%3
     marker='failure-'+uuid.uuid4().hex[:12]
+    coordinates={'latitude':1.3521,'longitude':103.8198}
     created=[]
     covered=set()
     for _ in range(60):
-        request=call('POST','/requests',{'type':'water','location':marker,'details':'Storage failover demonstration'})
+        request=call('POST','/requests',{'type':'water','location':marker,
+            'coordinates':coordinates,'details':'Storage failover demonstration'})
         created.append(request);covered.add(shard('request/'+request['id']))
         if len(covered)==3:break
     assert covered=={0,1,2},'all shards must receive demonstration records'

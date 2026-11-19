@@ -122,14 +122,10 @@ func jobMutation(requestID string) (storage.Mutation, error) {
 	id := hex.EncodeToString(b[:])
 	return put("job/"+id, Job{ID: id, RequestID: requestID}, 0), nil
 }
-func (s *Service) CreateRequest(ctx context.Context, kind, location, details string, coordinates ...*domain.Coordinates) (domain.Request, error) {
+func (s *Service) CreateRequest(ctx context.Context, kind string, location domain.LocationInput, details string) (domain.Request, error) {
 	r, e := domain.NewRequest(kind, location, details, time.Now())
 	if e != nil {
 		return r, e
-	}
-	r.Coordinates, e = copyCoordinates(coordinates)
-	if e != nil {
-		return domain.Request{}, e
 	}
 	j, e := jobMutation(r.ID)
 	if e != nil {
@@ -188,14 +184,10 @@ func (s *Service) ListResources(ctx context.Context) ([]domain.Resource, error) 
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
 }
-func (s *Service) CreateResource(ctx context.Context, kind, location string, available bool, coordinates ...*domain.Coordinates) (domain.Resource, error) {
+func (s *Service) CreateResource(ctx context.Context, kind string, location domain.LocationInput, available bool) (domain.Resource, error) {
 	r, e := domain.NewResource(kind, location, available)
 	if e != nil {
 		return r, e
-	}
-	r.Coordinates, e = copyCoordinates(coordinates)
-	if e != nil {
-		return domain.Resource{}, e
 	}
 	ms := []storage.Mutation{put("resource/"+r.ID, r, 0)}
 	if available {
@@ -248,6 +240,7 @@ func (s *Service) Match(ctx context.Context, id string) (domain.Request, error) 
 				if resources[i].ID == matched.ResourceID {
 					resources[i].Availability = false
 					resources[i].Status = domain.Reserved
+					break
 				}
 			}
 		}

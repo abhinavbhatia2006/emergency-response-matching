@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App from "./App";
+import { Marker } from "leaflet";
 const request = {
   id: "req-123",
   type: "water",
@@ -10,7 +11,7 @@ const request = {
   status: "pending",
   created_at: "2026-11-15T12:00:00Z",
 };
-type RequestFixture = typeof request & { coordinates?: { latitude: number; longitude: number }; distance_meters?: number; resource_id?: string };
+type RequestFixture = typeof request & { coordinates?: { latitude: number; longitude: number }; directions?: string; distance_meters?: number; resource_id?: string };
 let rows: RequestFixture[];
 let resources: object[];
 let ready: boolean;
@@ -19,6 +20,7 @@ let posted: Record<string, unknown>[];
 let configResponse: unknown;
 let configFails: boolean;
 beforeEach(() => {
+  vi.stubGlobal("scrollTo", vi.fn());
   rows = [];
   resources = [];
   ready = true;
@@ -35,9 +37,9 @@ beforeEach(() => {
       if (input === "/requests" && init?.method === "POST") {
         const body = JSON.parse(String(init.body));
         posted.push(body);
-        if (body.type !== "water" || body.location !== "delhi" || !body.details)
+        if (body.type !== "water" || !body.coordinates || !body.details)
           return new Response('{"error":"bad input"}', { status: 400 });
-        rows = [{ ...request, ...body }];
+        rows = [{ ...request, ...body, location: body.location?.toLowerCase() ?? "" }];
         return Response.json(rows[0], { status: 201 });
       }
       if (input === "/requests") return Response.json(rows);
@@ -48,6 +50,7 @@ beforeEach(() => {
           {
             id: "res-123",
             ...body,
+            location: body.location?.toLowerCase() ?? "",
             status: body.availability ? "available" : "unavailable",
           },
         ];
@@ -72,6 +75,77 @@ beforeEach(() => {
   );
 });
 afterEach(() => vi.unstubAllGlobals());
+
+it("shows requests and resources with saved coordinates in the overview map", async () => {
+  rows = [
+    { ...request, location: "city hall", coordinates: { latitude: 28.61, longitude: 77.21 } },
+    { ...request, id: "legacy", location: "old district" },
+  ];
+  resources = [{
+    id: "res-123", type: "medicine", location: "health centre",
+    status: "available", availability: true, coordinates: { latitude: 28.62, longitude: 77.22 },
+  }];
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(screen.getByRole("button", { name: "Map" }));
+  const map = await screen.findByRole("region", { name: "Request and resource locations" });
+  expect(await within(map).findByRole("button", { name: /request.*city hall/i })).toHaveClass("overview-pin--request");
+  expect(within(map).getByRole("button", { name: /resource.*health centre/i })).toHaveClass("overview-pin--resource");
+  expect(within(map).queryByRole("button", { name: /old district/i })).not.toBeInTheDocument();
+  await user.click(within(map).getByRole("button", { name: /resource.*health centre/i }));
+  const details = screen.getByRole("region", { name: "Selected map record" });
+  expect(within(details).getByRole("heading", { name: "health centre" })).toBeInTheDocument();
+  expect(within(details).getByText("Available")).toBeInTheDocument();
+  expect(within(details).getByText("res-123")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Show all pins" }));
+  expect(screen.queryByRole("region", { name: "Selected map record" })).not.toBeInTheDocument();
+  within(map).getByRole("button", { name: /request.*city hall/i }).focus();
+  await user.keyboard("{Enter}");
+  expect(screen.getByRole("heading", { name: "city hall" })).toBeInTheDocument();
+  within(map).getByRole("button", { name: /resource.*health centre/i }).focus();
+  await user.keyboard(" ");
+  expect(screen.getByRole("heading", { name: "health centre" })).toBeInTheDocument();
+});
+
+it("opens the selected request from the list and highlights its assigned resource", async () => {
+  rows = [{
+    ...request, location: "city hall", status: "matched", resource_id: "res-123",
+    coordinates: { latitude: 28.61, longitude: 77.21 }, distance_meters: 1250,
+  }];
+  resources = [{
+    id: "res-123", type: "water", location: "water depot", status: "reserved",
+    availability: false, coordinates: { latitude: 28.62, longitude: 77.21 },
+  }];
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: "Show request req-123 on map" }));
+  const map = await screen.findByRole("region", { name: "Request and resource locations" });
+  expect(within(map).getByRole("button", { name: /request.*city hall/i })).toHaveClass("overview-pin--selected");
+  expect(within(map).getByRole("button", { name: /resource.*water depot/i })).toHaveClass("overview-pin--assigned");
+  expect(map.querySelector(".overview-match-line")).toBeInTheDocument();
+  const details = screen.getByRole("region", { name: "Selected map record" });
+  expect(within(details).getByText("water depot")).toBeInTheDocument();
+  expect(within(details).getByText("1.25 km")).toBeInTheDocument();
+});
+
+it("lets users choose among records sharing one pin", async () => {
+  const coordinates = { latitude: 0, longitude: 0 };
+  rows = [{ ...request, location: "north gate", coordinates }];
+  resources = [{
+    id: "res-456", type: "water", location: "south gate",
+    status: "available", availability: true, coordinates,
+  }];
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(screen.getByRole("button", { name: "Map" }));
+  const map = await screen.findByRole("region", { name: "Request and resource locations" });
+  await user.click(await within(map).findByRole("button", { name: "2 records at this pin" }));
+  const shared = screen.getByRole("list", { name: "Records at this pin" });
+  await user.click(within(shared).getByRole("button", { name: /resource.*south gate/i }));
+  expect(screen.getByRole("heading", { name: "south gate" })).toBeInTheDocument();
+  expect(within(shared).getByRole("button", { name: /resource.*south gate/i })).toHaveAttribute("aria-pressed", "true");
+});
+
 it("offers a third Shard details activity tab", async () => {
   const user = userEvent.setup();
   render(<App />);
@@ -147,7 +221,8 @@ it("creates a request with the public payload and displays the saved result", as
     within(dialog).getByLabelText("Assistance type"),
     "water",
   );
-  await user.type(within(dialog).getByLabelText("Location"), "delhi");
+  expect(within(dialog).queryByLabelText(/^location$/i)).not.toBeInTheDocument();
+  await user.type(within(dialog).getByLabelText("Name"), "Gate 2");
   await user.type(within(dialog).getByLabelText("Latitude"), "0");
   await user.type(within(dialog).getByLabelText("Longitude"), "0");
   await user.type(
@@ -162,10 +237,11 @@ it("creates a request with the public payload and displays the saved result", as
   ).toBeInTheDocument();
   expect(screen.getByText("Drinking water for a family")).toBeInTheDocument();
   expect(screen.getByLabelText("Pending requests")).toHaveTextContent("1");
-  expect(posted[0]).toEqual({ type: "water", location: "delhi", details: "Drinking water for a family", coordinates: { latitude: 0, longitude: 0 } });
+  expect(within(screen.getByRole("dialog")).getByText("gate 2")).toBeInTheDocument();
+  expect(posted[0]).toEqual({ type: "water", location: "Gate 2", details: "Drinking water for a family", coordinates: { latitude: 0, longitude: 0 } });
 });
 it("matches a pending request and allows completion only after matching", async () => {
-  rows = [request];
+  rows = [{ ...request, coordinates: { latitude: 28.6, longitude: 77.2 } }];
   const user = userEvent.setup();
   render(<App />);
   await user.click(
@@ -200,7 +276,6 @@ it("registers an unavailable resource without miscounting available resources", 
   render(<App />);
   await user.click(screen.getByRole("button", { name: "Add resource" }));
   const dialog = screen.getByRole("dialog");
-  await user.type(within(dialog).getByLabelText("Location"), "delhi");
   await user.type(within(dialog).getByLabelText("Latitude"), "-90");
   await user.type(within(dialog).getByLabelText("Longitude"), "180");
   await user.click(within(dialog).getByLabelText("Available for matching"));
@@ -209,7 +284,79 @@ it("registers an unavailable resource without miscounting available resources", 
   );
   expect(await screen.findByText("res-123")).toBeInTheDocument();
   expect(screen.getByLabelText("Available resources")).toHaveTextContent("0");
-  expect(posted[0]).toEqual({ type: "food", location: "delhi", availability: false, coordinates: { latitude: -90, longitude: 180 } });
+  expect(screen.getByText("Pinned location")).toBeInTheDocument();
+  expect(posted[0]).toEqual({ type: "food", availability: false, coordinates: { latitude: -90, longitude: 180 } });
+});
+
+it("submits the device location with a new request only after the user asks", async () => {
+  const position = vi.fn((success: PositionCallback) => success({
+    coords: { latitude: 28.6139, longitude: 77.209 },
+  } as GeolocationPosition));
+  vi.stubGlobal("isSecureContext", true);
+  vi.stubGlobal("navigator", Object.assign(Object.create(navigator), { geolocation: { getCurrentPosition: position } }));
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "New request" }));
+  expect(position).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Use my location" }));
+  fireEvent.change(screen.getByLabelText("Assistance type"), { target: { value: "water" } });
+  fireEvent.change(screen.getByLabelText("Request details"), { target: { value: "Water needed" } });
+  fireEvent.click(screen.getByRole("button", { name: "Create request" }));
+  await waitFor(() => expect(posted[0]).toMatchObject({ coordinates: { latitude: 28.6139, longitude: 77.209 } }));
+});
+
+it("submits the resource pin even when an older device location arrives later", async () => {
+  let receivePosition!: PositionCallback;
+  vi.stubGlobal("isSecureContext", true);
+  vi.stubGlobal("navigator", Object.assign(Object.create(navigator), { geolocation: {
+    getCurrentPosition: (onPosition: PositionCallback) => { receivePosition = onPosition; },
+  } }));
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Add resource" }));
+  fireEvent.click(screen.getByRole("button", { name: "Use my location" }));
+  fireEvent.click(screen.getByRole("region", { name: "Location map" }), { clientX: 50, clientY: 80 });
+  const latitude = (screen.getByLabelText("Latitude") as HTMLInputElement).valueAsNumber;
+  const longitude = (screen.getByLabelText("Longitude") as HTMLInputElement).valueAsNumber;
+  expect(Number.isFinite(latitude) && Number.isFinite(longitude)).toBe(true);
+  act(() => receivePosition({ coords: { latitude: 1, longitude: 2 } } as GeolocationPosition));
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Main gate" } });
+  fireEvent.click(screen.getByRole("button", { name: "Register resource" }));
+  await waitFor(() => expect(posted[0]).toMatchObject({ location: "Main gate", coordinates: { latitude, longitude } }));
+});
+
+it("keeps manual coordinates available when location permission is denied", async () => {
+  vi.stubGlobal("isSecureContext", true);
+  vi.stubGlobal("navigator", Object.assign(Object.create(navigator), { geolocation: {
+    getCurrentPosition: (_: PositionCallback, onError: PositionErrorCallback) => onError({ code: 1 } as GeolocationPositionError),
+  } }));
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Add resource" }));
+  fireEvent.click(screen.getByRole("button", { name: "Use my location" }));
+  expect(screen.getByText(/permission was denied/i)).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Latitude"), { target: { value: "0" } });
+  expect(screen.getByLabelText("Latitude")).toHaveValue(0);
+});
+
+it("uses the final dragged position and allows manual entry if tiles fail", async () => {
+  const added = vi.spyOn(Marker.prototype, "addTo");
+  try {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add resource" }));
+    const map = screen.getByRole("region", { name: "Location map" });
+    fireEvent.click(map, { clientX: 110, clientY: 72 });
+    const marker = added.mock.instances[0];
+    if (!(marker instanceof Marker)) throw new Error("Map click did not create a marker");
+    expect(marker.dragging?.enabled()).toBe(true);
+    act(() => { marker.setLatLng([12.5, 76.25]).fire("dragend"); });
+    expect(screen.getByLabelText("Latitude")).toHaveValue(12.5);
+    expect(screen.getByLabelText("Longitude")).toHaveValue(76.25);
+    fireEvent.error(map.querySelector("img.leaflet-tile")!);
+    expect(screen.getByText(/tiles could not load/i)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Longitude"), { target: { value: "77" } });
+    fireEvent.blur(screen.getByLabelText("Longitude"));
+    expect(screen.getByLabelText("Longitude")).toHaveValue(77);
+  } finally {
+    added.mockRestore();
+  }
 });
 it.each([
   ["91", "0"], ["-91", "0"], ["0", "181"], ["0", "-181"], ["", "0"], ["0", ""],
@@ -218,7 +365,6 @@ it.each([
   render(<App />);
   await user.click(screen.getByRole("button", { name: "Add resource" }));
   const dialog = screen.getByRole("dialog");
-  await user.type(within(dialog).getByLabelText("Location"), "delhi");
   if (latitude) await user.type(within(dialog).getByLabelText("Latitude"), latitude);
   if (longitude) await user.type(within(dialog).getByLabelText("Longitude"), longitude);
   // Exercise the submit boundary even when native constraint validation is bypassed.
@@ -238,13 +384,15 @@ it.each([[12345, "12.345 km"], [0, "0 km"], [50000, "50 km"]])("shows the assign
   expect(dialog.getByText(/straight-line geographic distance/i)).toBeInTheDocument();
   expect(dialog.queryByRole("link")).not.toBeInTheDocument();
 });
-it("labels legacy requests explicitly without inventing geographic distance", async () => {
-  rows = [{ ...request, status: "matched", resource_id: "res-123" }];
+it("lets a legacy request match by district without showing a geographic distance", async () => {
+  rows = [request];
   const user = userEvent.setup();
   render(<App />);
   await user.click(await screen.findByRole("button", { name: "View request req-123" }));
   const dialog = within(screen.getByRole("dialog"));
-  expect(dialog.getByText("District matching · no coordinates")).toBeInTheDocument();
+  expect(dialog.getByText("No coordinates saved")).toBeInTheDocument();
+  await user.click(dialog.getByRole("button", { name: "Find a match" }));
+  expect(await dialog.findByText("res-123")).toBeInTheDocument();
   expect(dialog.queryByText(/\d.*km/)).not.toBeInTheDocument();
 });
 it("shows resource coordinates and distinguishes coordinate-less resources in the ledger", async () => {
@@ -256,10 +404,10 @@ it("shows resource coordinates and distinguishes coordinate-less resources in th
   render(<App />);
   await user.click(screen.getByRole("tab", {name: /Resources/}));
   expect(await screen.findByText("0, 0")).toBeInTheDocument();
-  expect(screen.getByText("District matching · no coordinates")).toBeInTheDocument();
+  expect(screen.getByText("No coordinates saved")).toBeInTheDocument();
 });
 it("keeps an unmatched request pending and surfaces the server error", async () => {
-  rows = [request];
+  rows = [{ ...request, coordinates: { latitude: 28.6, longitude: 77.2 } }];
   matchFails = true;
   const user = userEvent.setup();
   render(<App />);
