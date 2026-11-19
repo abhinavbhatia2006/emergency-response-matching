@@ -94,7 +94,7 @@ func (s *Service) Handler() http.Handler {
 			return
 		}
 		location := domain.LocationInput{Label: in.Location, Coordinates: coordinates, Directions: in.Directions}
-		out, e := s.createRequest(r.Context(), in.Type, location, in.Details)
+		out, e := s.CreateRequest(r.Context(), in.Type, location, in.Details)
 		if e != nil {
 			failure(w, e)
 			return
@@ -153,7 +153,7 @@ func (s *Service) Handler() http.Handler {
 			return
 		}
 		location := domain.LocationInput{Label: in.Location, Coordinates: coordinates, Directions: in.Directions}
-		out, e := s.createResource(r.Context(), in.Type, location, *in.Availability)
+		out, e := s.CreateResource(r.Context(), in.Type, location, *in.Availability)
 		if e != nil {
 			failure(w, e)
 			return

@@ -11,7 +11,7 @@ python scripts/smoke.py --url http://127.0.0.1:18081 --count 12
 python scripts/geographic-smoke.py --url http://127.0.0.1:18081
 ```
 
-The first check creates resources and simultaneous requests, waits for RabbitMQ-driven assignments, verifies every assigned resource is distinct, and exercises retrieval, completion, cancellation, availability and error responses. The second verifies coordinates, cross-district geographic selection, persisted distance and exclusion beyond the configured radius.
+The first check creates resources and simultaneous requests at the same coordinates with different names. It verifies that RabbitMQ-driven assignments are unique, records zero distance, and exercises retrieval, completion, cancellation, availability, and rejection of name-only submissions. The second checks nearest-resource selection across different names, persisted distance, and exclusion beyond the configured radius.
 
 ## Storage distribution, failure and recovery
 

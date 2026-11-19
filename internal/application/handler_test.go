@@ -75,16 +75,16 @@ func TestPublicAPIContract(t *testing.T) {
 		return w.Body.Bytes()
 	}
 	call("POST", "/requests", `{"type":"water","location":"delhi","details":"need water","extra":1}`, 400)
-	call("POST", "/resources", `{"type":"water","location":"delhi"}`, 400)
+	call("POST", "/resources", `{"type":"water","location":"delhi","coordinates":{"latitude":28.62,"longitude":77.2}}`, 400)
 	call("POST", "/resources", `null`, 400)
 	call("POST", "/requests", `{} {}`, 400)
 	var req domain.Request
-	json.Unmarshal(call("POST", "/requests", `{"type":"water","location":"delhi","details":"need water"}`, 201), &req)
+	json.Unmarshal(call("POST", "/requests", `{"type":"water","location":"delhi","details":"need water","coordinates":{"latitude":28.62,"longitude":77.2}}`, 201), &req)
 	call("GET", "/requests/"+req.ID, "", 200)
 	call("GET", "/requests", "", 200)
 	call("POST", "/match/"+req.ID, "", 409)
 	var resource domain.Resource
-	json.Unmarshal(call("POST", "/resources", `{"type":"water","location":"delhi","availability":true}`, 201), &resource)
+	json.Unmarshal(call("POST", "/resources", `{"type":"water","location":"another name","availability":true,"coordinates":{"latitude":28.62,"longitude":77.2}}`, 201), &resource)
 	call("GET", "/resources", "", 200)
 	call("PUT", "/resources/"+resource.ID+"/status", `{"status":"unavailable"}`, 200)
 	call("PUT", "/resources/"+resource.ID+"/status", `{"status":"available"}`, 200)

@@ -1,5 +1,7 @@
 import ShardDetails from "./ShardDetails";
 import LocationPicker from "./LocationPicker";
+import OverviewMap from "./OverviewMap";
+import { kilometers, title, validCoordinates, type Coordinates, type Kind, type RequestRecord, type Resource } from "./records";
 import {
   useCallback,
   useEffect,
@@ -33,29 +35,6 @@ import {
   X,
 } from "lucide-react";
 
-type Kind = "food" | "water" | "medicine" | "transportation" | "shelter";
-type Coordinates = { latitude: number; longitude: number };
-type RequestRecord = {
-  id: string;
-  type: Kind;
-  location: string;
-  directions?: string;
-  details: string;
-  status: "pending" | "matched" | "completed" | "cancelled";
-  created_at: string;
-  resource_id?: string;
-  coordinates?: Coordinates;
-  distance_meters?: number;
-};
-type Resource = {
-  id: string;
-  type: Kind;
-  location: string;
-  directions?: string;
-  availability: boolean;
-  status: "available" | "unavailable" | "reserved";
-  coordinates?: Coordinates;
-};
 const kinds: Kind[] = [
   "food",
   "water",
@@ -70,9 +49,7 @@ const icons = {
   transportation: Truck,
   shelter: Home,
 };
-const title = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
 const coordinateLabel = ({ latitude, longitude }: Coordinates) => `${latitude}, ${longitude}`;
-const kilometers = (meters: number) => `${new Intl.NumberFormat("en", { maximumFractionDigits: 3 }).format(meters / 1000)} km`;
 async function api<T>(
   path: string,
   method = "GET",
@@ -188,6 +165,7 @@ export default function App() {
   );
   const [tab, setTab] = useState<"requests" | "resources" | "shard details">("requests"),
     [nav, setNav] = useState("Overview");
+  const [mapSelection, setMapSelection] = useState<string | null>(null);
   const [form, setForm] = useState<"request" | "resource" | null>(null),
     [selected, setSelected] = useState<RequestRecord | null>(null);
   const [busy, setBusy] = useState(false),
@@ -267,6 +245,10 @@ export default function App() {
     setError("");
     setNotice("");
     setForm(kind);
+  };
+  const showOnMap = (kind: "request" | "resource", id: string) => {
+    setMapSelection(`${kind}/${id}`);
+    setNav("Map");
   };
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -367,14 +349,17 @@ export default function App() {
             { name: "Overview", icon: LayoutDashboard },
             { name: "Requests", icon: ClipboardList },
             { name: "Resources", icon: Package },
+            { name: "Map", icon: MapPin },
           ].map((item) => (
             <button
               key={item.name}
               className={`nav-item ${nav === item.name ? "active" : ""}`}
+              aria-current={nav === item.name ? "page" : undefined}
               onClick={() => {
                 setNav(item.name);
-                if (item.name !== "Overview")
-                  setTab(item.name === "Requests" ? "requests" : "resources");
+                if (item.name === "Requests") setTab("requests");
+                if (item.name === "Resources") setTab("resources");
+                if (item.name === "Map" && nav !== "Map") setMapSelection(null);
               }}
             >
               <item.icon size={17} />
@@ -412,6 +397,16 @@ export default function App() {
           </div>
         </header>
         <main>
+          {nav === "Map" ? (
+            <OverviewMap
+              requests={requests}
+              resources={resources}
+              selectedKey={mapSelection}
+              onSelect={setMapSelection}
+              refreshing={refreshing}
+              onRefresh={() => void refresh()}
+            />
+          ) : <>
           <div className="page-heading">
             <div>
               <p className="eyebrow"><span className="section-number">01 /</span> Emergency response coordination</p>
@@ -602,13 +597,14 @@ export default function App() {
                                 <span className="location">
                                   {record.location || "Pinned location"}
                                 </span>
-                                <span className="coordinate-meta">{record.coordinates ? coordinateLabel(record.coordinates) : "District matching · no coordinates"}</span>
+                                <span className="coordinate-meta">{validCoordinates(record.coordinates) ? coordinateLabel(record.coordinates) : "No coordinates saved"}</span>
                                 {record.directions && <span className="directions-note">Directions: {record.directions}</span>}
                               </td>
                               <td>
                                 <Badge status={record.status} />
                               </td>
                               <td>
+                                <div className="row-actions">
                                 {tab === "requests" ? (
                                   <button
                                     className="row-action"
@@ -666,6 +662,17 @@ export default function App() {
                                     )}
                                   </button>
                                 )}
+                                {validCoordinates(record.coordinates) && (
+                                  <button
+                                    className="row-action"
+                                    aria-label={`Show ${tab === "requests" ? "request" : "resource"} ${record.id} on map`}
+                                    title="Show on map"
+                                    onClick={() => showOnMap(tab === "requests" ? "request" : "resource", record.id)}
+                                  >
+                                    <MapPin size={16} />
+                                  </button>
+                                )}
+                                </div>
                               </td>
                             </tr>
                           );
@@ -755,6 +762,7 @@ export default function App() {
               </section>
             </div>
           </div>
+          </>}
           <footer>
             <span>RELAY / COMMUNITY RESPONSE INFRASTRUCTURE</span>
             <span>
@@ -796,7 +804,7 @@ export default function App() {
             </label>
             <p id="location-name-help" className="field-help" style={{ marginTop: -10 }}>Optional label for the pin.</p>
             <LocationPicker />
-            <p id="coordinate-help" className="field-help" style={{ marginTop: -10 }}>Use decimal degrees: latitude -90 to 90; longitude -180 to 180. Matching uses straight-line geographic distance. {limitDescription}</p>
+            <p id="coordinate-help" className="field-help" style={{ marginTop: -10 }}>Both coordinates are required. Use decimal degrees from -90 to 90 for latitude and -180 to 180 for longitude. Matching uses straight-line geographic distance. {limitDescription}</p>
             {form === "request" ? (
               <label>
                 Request details
@@ -871,7 +879,7 @@ export default function App() {
                 <span className="directions-note">{selected.directions}</span>
               </div>
             )}
-            {selected.coordinates ? <>
+            {validCoordinates(selected.coordinates) ? <>
               <div className="detail-line"><span>Coordinates (lat, lon)</span><span className="detail-id">{coordinateLabel(selected.coordinates)}</span></div>
               <section className="distance-summary" aria-label="Geographic matching">
                 <p className="distance-kicker">STRAIGHT-LINE GEOGRAPHIC DISTANCE</p>
@@ -879,7 +887,7 @@ export default function App() {
                   <><strong className="assigned-distance">{kilometers(selected.distance_meters)}</strong><p className="field-help">Distance recorded at matching time. Geographic proximity does not measure travel distance or arrival time.</p></> :
                   <p className="field-help">No assigned distance yet. {limitDescription}</p>}
               </section>
-            </> : <p className="legacy-note">District matching · no coordinates</p>}
+            </> : <p className="legacy-note">No coordinates saved</p>}
             {selected.resource_id && (
               <div className="detail-line">
                 <span>Assigned resource</span>
@@ -887,7 +895,15 @@ export default function App() {
               </div>
             )}
             <div className="actions">
-              {selected.status === "pending" && (
+              {validCoordinates(selected.coordinates) && (
+                <button className="secondary" disabled={busy} onClick={() => {
+                  showOnMap("request", selected.id);
+                  setSelected(null);
+                }}>
+                  <MapPin size={15} /> Show on map
+                </button>
+              )}
+              {selected.status === "pending" && validCoordinates(selected.coordinates) && (
                 <button
                   className="primary"
                   disabled={busy}
@@ -947,9 +963,9 @@ export default function App() {
             </div>
             <p className="field-help">
               {selected.status === "pending"
-                ? selected.coordinates
+                ? validCoordinates(selected.coordinates)
                   ? `Matching selects the nearest available same-type resource using geographic coordinates. ${limitDescription}`
-                  : "This legacy request matches by assistance type and district only. Geographic distance is not checked."
+                  : "This request needs coordinates before it can be matched."
                 : selected.status === "matched"
                   ? "Complete this request after assistance is delivered. Cancelling releases the assigned resource."
                   : "This request is closed and its status cannot be changed."}

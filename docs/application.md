@@ -20,15 +20,15 @@ Use Node.js 22.12 or newer for frontend builds. Open http://127.0.0.1:8080. Reac
 
 | Method | Path | Input | Success |
 |---|---|---|---|
-| POST | `/requests` | `{"type":"water","location":"delhi","details":"drinking water"}` |201 request|
+| POST | `/requests` | `{"type":"water","coordinates":{"latitude":28.633,"longitude":77.2167},"details":"drinking water"}` |201 request|
 | GET | `/requests/{id}` | none |200 request|
 | PUT | `/requests/{id}/status` | `{"status":"cancelled"}` |200 request|
-| POST | `/resources` | `{"type":"water","location":"delhi","availability":true}` |201 resource|
+| POST | `/resources` | `{"type":"water","coordinates":{"latitude":28.633,"longitude":77.2167},"availability":true}` |201 resource|
 | GET | `/resources` | none |200 resource array|
 | PUT | `/resources/{id}/status` | `{"status":"available"}` |200 resource|
 | POST | `/match/{id}` | none |200 request|
 
-Additional GET `/requests` returns the request collection; GET `/healthz` is process liveness; GET `/readyz` checks storage availability. Readiness does not prove broker or worker health. Error objects use `{"error":"message"}`: 400 invalid input/transition,404 missing record,409 version conflict or no suitable match,413 oversized input,503 unavailable storage or uncertain write outcome. Bodies are limited to 64 KiB and reject unknown fields and extra JSON values. IDs are 32 lowercase hexadecimal characters. Five types are food,water,medicine,transportation,shelter; type and district are normalized. Matching uses equal type/district and deterministic resource ID order.
+GET `/requests` returns the request collection. GET `/healthz` checks process liveness and GET `/readyz` checks storage availability. Readiness checks storage only. Error objects use `{"error":"message"}` with status 400 for invalid input or transitions, 404 for missing records, 409 for conflicts or no suitable match, 413 for oversized input, and 503 for unavailable storage or uncertain write outcomes. Bodies are limited to 64 KiB and reject unknown fields and extra JSON values. IDs are 32 lowercase hexadecimal characters. The API trims and lowercases assistance types and location names. The five supported types are food, water, medicine, transportation, and shelter.
 
 Creation atomically saves a pending request and an outbox job before returning 201. The [matching worker](messaging.md) publishes/consumes jobs through RabbitMQ. Creating a resource or making it available atomically queues one rescan job, so large waiting lists do not require one transaction per pending request. Manual match is immediate and uses the same idempotent business operation as the worker. No available resource leaves the request pending.
 
@@ -46,6 +46,12 @@ In either creation form, tap the OpenStreetMap map or drag its pin to choose the
 
 **Name** is an optional, user-supplied label for the pin. The dashboard displays it alongside the coordinates, with **Pinned location** as the fallback. The system does not verify that the name corresponds to the coordinates. Geographic matching uses the pin's coordinates.
 
-Creation bodies may include `coordinates: {"latitude": 28.633, "longitude": 77.2167}`; both members are required together. The dashboard requires this object for new records. Coordinate-equipped requests choose the nearest available same-type resource within `MAX_MATCH_DISTANCE_METERS` (default 50000), and matched responses include `distance_meters`. Older coordinate-less clients retain exact-district matching. `GET /config` returns the configured maximum and `distance_method: "haversine"`. See [geographic matching](geographic-matching.md).
+Both creation endpoints require a `coordinates` object with numeric `latitude` and `longitude`. Missing or invalid coordinates return HTTP 400. Matching chooses the nearest available same-type resource within `MAX_MATCH_DISTANCE_METERS` (default 50000), and matched responses include `distance_meters`. `GET /config` returns the configured maximum and `distance_method: "haversine"`. See [geographic matching](geographic-matching.md).
 
-When coordinates are supplied, `location` may be omitted. Such records return an empty `location` and display **Pinned location** in the dashboard. Both create endpoints accept an optional `directions` string of up to 200 characters. Directions are saved with the record for people reading it. Matching uses coordinates or, for older coordinate-less requests, the district label.
+Omitting the optional `location` name returns an empty `location` and displays **Pinned location** in the dashboard. Both create endpoints also accept an optional `directions` string of up to 200 characters. The name and directions are for display.
+
+## Response map
+
+Open **Map** in the main navigation to see requests as orange clipboard pins and resources as teal package pins. Select a pin to inspect the record. A numbered pin groups records that share the same coordinates. **Show on map** in either list opens the corresponding pin. Records without usable coordinates remain accessible through the lists.
+
+Selecting a currently matched request also highlights its assigned resource if both records have coordinates. The dashed line shows the stored straight-line distance. **Show all pins** returns to the map overview.

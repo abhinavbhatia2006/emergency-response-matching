@@ -122,16 +122,8 @@ func jobMutation(requestID string) (storage.Mutation, error) {
 	id := hex.EncodeToString(b[:])
 	return put("job/"+id, Job{ID: id, RequestID: requestID}, 0), nil
 }
-func (s *Service) CreateRequest(ctx context.Context, kind, location, details string, coordinates ...*domain.Coordinates) (domain.Request, error) {
-	point, e := copyCoordinates(coordinates)
-	if e != nil {
-		return domain.Request{}, e
-	}
-	return s.createRequest(ctx, kind, domain.LocationInput{Label: location, Coordinates: point}, details)
-}
-
-func (s *Service) createRequest(ctx context.Context, kind string, location domain.LocationInput, details string) (domain.Request, error) {
-	r, e := domain.NewRequestAt(kind, location, details, time.Now())
+func (s *Service) CreateRequest(ctx context.Context, kind string, location domain.LocationInput, details string) (domain.Request, error) {
+	r, e := domain.NewRequest(kind, location, details, time.Now())
 	if e != nil {
 		return r, e
 	}
@@ -192,16 +184,8 @@ func (s *Service) ListResources(ctx context.Context) ([]domain.Resource, error) 
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
 }
-func (s *Service) CreateResource(ctx context.Context, kind, location string, available bool, coordinates ...*domain.Coordinates) (domain.Resource, error) {
-	point, e := copyCoordinates(coordinates)
-	if e != nil {
-		return domain.Resource{}, e
-	}
-	return s.createResource(ctx, kind, domain.LocationInput{Label: location, Coordinates: point}, available)
-}
-
-func (s *Service) createResource(ctx context.Context, kind string, location domain.LocationInput, available bool) (domain.Resource, error) {
-	r, e := domain.NewResourceAt(kind, location, available)
+func (s *Service) CreateResource(ctx context.Context, kind string, location domain.LocationInput, available bool) (domain.Resource, error) {
+	r, e := domain.NewResource(kind, location, available)
 	if e != nil {
 		return r, e
 	}
@@ -232,31 +216,16 @@ func (s *Service) Match(ctx context.Context, id string) (domain.Request, error) 
 		if e != nil {
 			return domain.Request{}, e
 		}
-		resources, e := s.ListResources(ctx)
-		if e != nil {
-			return domain.Request{}, e
-		}
 		for _, request := range requests {
-			if request.Status != domain.Pending {
+			if request.Status != domain.Pending || request.Coordinates == nil {
 				continue
 			}
-			if request.Coordinates == nil {
-				if _, e := domain.SelectResource(request, resources); errors.Is(e, domain.ErrNoMatch) {
-					continue
-				}
-			}
-			matched, e := s.Match(ctx, request.ID)
+			_, e := s.Match(ctx, request.ID)
 			if errors.Is(e, domain.ErrNoMatch) {
 				continue
 			}
 			if e != nil {
 				return domain.Request{}, e
-			}
-			for i := range resources {
-				if resources[i].ID == matched.ResourceID {
-					resources[i].Availability = false
-					resources[i].Status = domain.Reserved
-				}
 			}
 		}
 		return domain.Request{}, nil

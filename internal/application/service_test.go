@@ -66,7 +66,8 @@ func serviceTest(t *testing.T) *Service {
 func TestRequestOutboxAndLifecycle(t *testing.T) {
 	s := serviceTest(t)
 	ctx := context.Background()
-	req, e := s.CreateRequest(ctx, " Water ", " Delhi ", "clean water")
+	location := domain.LocationInput{Label: " Delhi ", Coordinates: &domain.Coordinates{}}
+	req, e := s.CreateRequest(ctx, " Water ", location, "clean water")
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -80,7 +81,7 @@ func TestRequestOutboxAndLifecycle(t *testing.T) {
 	if _, e = s.Match(ctx, req.ID); !errors.Is(e, domain.ErrNoMatch) {
 		t.Fatalf("no match: %v", e)
 	}
-	resource, e := s.CreateResource(ctx, "water", "delhi", true)
+	resource, e := s.CreateResource(ctx, "water", location, true)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -112,12 +113,13 @@ func TestRequestOutboxAndLifecycle(t *testing.T) {
 func TestConcurrentMatchingNeverDoubleBooks(t *testing.T) {
 	s := serviceTest(t)
 	ctx := context.Background()
-	if _, e := s.CreateResource(ctx, "food", "pune", true); e != nil {
+	location := domain.LocationInput{Coordinates: &domain.Coordinates{}}
+	if _, e := s.CreateResource(ctx, "food", location, true); e != nil {
 		t.Fatal(e)
 	}
 	var requests []domain.Request
 	for i := 0; i < 12; i++ {
-		r, e := s.CreateRequest(ctx, "food", "pune", "meal")
+		r, e := s.CreateRequest(ctx, "food", location, "meal")
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -152,8 +154,14 @@ func TestConcurrentMatchingNeverDoubleBooks(t *testing.T) {
 func TestCompletionConsumesResource(t *testing.T) {
 	s := serviceTest(t)
 	ctx := context.Background()
-	s.CreateResource(ctx, "shelter", "mumbai", true)
-	r, _ := s.CreateRequest(ctx, "shelter", "mumbai", "bed")
+	location := domain.LocationInput{Coordinates: &domain.Coordinates{}}
+	if _, err := s.CreateResource(ctx, "shelter", location, true); err != nil {
+		t.Fatal(err)
+	}
+	r, err := s.CreateRequest(ctx, "shelter", location, "bed")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, e := s.Match(ctx, r.ID); e != nil {
 		t.Fatal(e)
 	}
@@ -168,12 +176,13 @@ func TestCompletionConsumesResource(t *testing.T) {
 func TestResourceWakeupExceedsBatchCountSafely(t *testing.T) {
 	s := serviceTest(t)
 	ctx := context.Background()
+	location := domain.LocationInput{Coordinates: &domain.Coordinates{}}
 	for i := 0; i < 260; i++ {
-		if _, e := s.CreateRequest(ctx, "food", "pune", "meal"); e != nil {
+		if _, e := s.CreateRequest(ctx, "food", location, "meal"); e != nil {
 			t.Fatal(e)
 		}
 	}
-	if _, e := s.CreateResource(ctx, "food", "pune", true); e != nil {
+	if _, e := s.CreateResource(ctx, "food", location, true); e != nil {
 		t.Fatalf("resource with many waiting requests: %v", e)
 	}
 	jobs, e := s.Jobs(ctx)

@@ -24,6 +24,7 @@ def main():
         parser.error('count must be 1-20 and timeout must be positive')
     base = args.url.rstrip('/')
     area = 'smoke-' + uuid.uuid4().hex[:12]
+    coordinates = {'latitude': 35.6762, 'longitude': 139.6503}
 
     def call(method, path, body=None, expected=200):
         payload = None if body is None else json.dumps(body).encode()
@@ -70,17 +71,20 @@ def main():
             assert 'text/html' not in response.headers.get('Content-Type', ''), f'asset returned HTML: {asset}'
     print('PASS: storage readiness and compiled React assets', flush=True)
 
-    resources = [call('POST', '/resources', {'type': 'food', 'location': area, 'availability': True}, 201)
+    resources = [call('POST', '/resources', {
+        'type': 'food', 'location': area, 'coordinates': coordinates, 'availability': True}, 201)
                  for _ in range(args.count)]
     with ThreadPoolExecutor(max_workers=min(args.count, 6)) as pool:
         requests = list(pool.map(lambda i: call('POST', '/requests', {
-            'type': 'food', 'location': area, 'details': f'Deployment verification {i}'}, 201), range(args.count)))
+            'type': 'food', 'location': f'{area}-request', 'coordinates': coordinates,
+            'details': f'Deployment verification {i}'}, 201), range(args.count)))
     wait(lambda: all(call('GET', '/requests/' + r['id'])['status'] == 'matched' for r in requests),
          'RabbitMQ asynchronous assignment')
     matched = [call('GET', '/requests/' + r['id']) for r in requests]
     ids = [r['resource_id'] for r in matched]
     assert len(set(ids)) == args.count, 'resource assigned more than once'
     assert set(ids) == {r['id'] for r in resources}
+    assert all(r['distance_meters'] == 0 for r in matched), 'expected zero distance at shared coordinates'
     print(f'PASS: {args.count} concurrent requests matched asynchronously without double booking', flush=True)
 
     first = matched[0]
@@ -92,10 +96,13 @@ def main():
     listed = call('GET', '/resources')
     used = next(r for r in listed if r['id'] == first['resource_id'])
     assert used['status'] == 'unavailable' and not used['availability']
-    pending = call('POST', '/requests', {'type': 'medicine', 'location': area, 'details': 'No matching resource'}, 201)
+    pending = call('POST', '/requests', {
+        'type': 'medicine', 'location': area, 'coordinates': coordinates, 'details': 'No matching resource'}, 201)
     call('POST', '/match/' + pending['id'], expected=409)
     assert call('PUT', '/requests/' + pending['id'] + '/status', {'status': 'cancelled'})['status'] == 'cancelled'
-    call('POST', '/resources', {'type': 'food', 'location': area}, 400)
+    call('POST', '/resources', {'type': 'food', 'location': area, 'coordinates': coordinates}, 400)
+    call('POST', '/resources', {'type': 'food', 'location': area, 'availability': True}, 400)
+    call('POST', '/requests', {'type': 'food', 'location': area, 'details': 'Missing coordinates'}, 400)
     call('GET', '/requests/' + '0' * 32, expected=404)
     print('PASS: idempotent match, lifecycle, resource reservation, and error contracts', flush=True)
     print(json.dumps({'url': base, 'location': area, 'request_ids': [r['id'] for r in requests],

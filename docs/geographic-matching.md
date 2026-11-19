@@ -1,6 +1,6 @@
 # Geographic matching
 
-New dashboard requests and resources include latitude and longitude. A request with coordinates selects the nearest available resource of the same assistance type within the configured geographic radius, regardless of the district label. Equal distances are resolved by resource ID. The assignment and its `distance_meters` are saved atomically with resource reservation in PostgreSQL.
+New requests and resources require latitude and longitude. The matcher selects the nearest available resource of the same assistance type within the configured geographic radius. Equal distances are resolved by resource ID. The assignment and its `distance_meters` are saved atomically with resource reservation in PostgreSQL.
 
 Distances are calculated entirely in Go using the haversine formula with mean Earth radius 6,371,008.8 metres. This is a spherical great-circle approximation of direct geographic separation. It does not account for transport routes, barriers, terrain, traffic or travel time. No external distance service, network request or API key is involved.
 
@@ -25,7 +25,7 @@ No single radius is optimal for every resource type or region. A smaller radius 
 
 Resources use the same coordinate object plus `availability`. Both coordinate members must be provided together. Latitude must be finite in [-90,90], longitude in [-180,180]. Zero is valid and must not be mistaken for a missing value. A matched request records `distance_meters`, including a legitimate zero distance.
 
-The dashboard requires coordinates for new submissions. Existing coordinate-less records and clients retain exact-district matching for compatibility, without a geographic-distance claim. Coordinate-equipped requests never fall back to district matching or choose a resource lacking coordinates. Older records are labeled explicitly in the dashboard.
+The dashboard and API both enforce the coordinate requirement. Matching requires coordinates on both records. The optional `location` field is a display name supplied by the user.
 
 No eligible resource within the radius leaves the request pending; manual matching returns 409. The worker can reconsider pending requests when resources are added or released. Distance is captured at assignment time and retained with the request's history after completion or cancellation.
 
@@ -37,4 +37,4 @@ python scripts/geographic-smoke.py --url http://127.0.0.1:8080
 
 Run this on an isolated demonstration instance. It uses public city-centre coordinates in Delhi and Mumbai, verifies cross-district asynchronous assignment and persisted distance, and rejects the remaining resource outside the radius. It creates demonstration records and closes its requests. Existing nearby transportation resources can affect candidate selection. The demonstration expects a configured radius between 5 km and 999 km.
 
-Unit tests cover known distances, zero, symmetry, poles, antipodes, the antimeridian, invalid coordinates, exact radius boundaries, deterministic ties and concurrent reservation. The ordinary deployment smoke separately verifies compatibility with coordinate-less API clients.
+Unit tests cover known distances, zero, symmetry, poles, antipodes, the antimeridian, invalid coordinates, exact radius boundaries, deterministic ties and concurrent reservation. The ordinary deployment smoke also verifies HTTP 400 for submissions that provide a name without coordinates.

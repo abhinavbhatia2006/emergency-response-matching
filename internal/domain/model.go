@@ -79,21 +79,22 @@ func normalize(kind string, location LocationInput) (Type, LocationInput, error)
 		return "", LocationInput{}, fmt.Errorf("%w: unsupported type", ErrInvalid)
 	}
 	location.Label = strings.TrimSpace(location.Label)
-	if !utf8.ValidString(location.Label) || utf8.RuneCountInString(location.Label) > 200 || (location.Label == "" && location.Coordinates == nil) {
-		return "", LocationInput{}, fmt.Errorf("%w: location must contain 1-200 characters unless coordinates are supplied", ErrInvalid)
+	if !utf8.ValidString(location.Label) || utf8.RuneCountInString(location.Label) > 200 {
+		return "", LocationInput{}, fmt.Errorf("%w: location name must contain at most 200 characters", ErrInvalid)
 	}
 	location.Label = strings.ToLower(location.Label)
 	location.Directions = strings.TrimSpace(location.Directions)
 	if !utf8.ValidString(location.Directions) || utf8.RuneCountInString(location.Directions) > 200 {
 		return "", LocationInput{}, fmt.Errorf("%w: directions must contain at most 200 characters", ErrInvalid)
 	}
-	if location.Coordinates != nil {
-		point := *location.Coordinates
-		if err := point.Validate(); err != nil {
-			return "", LocationInput{}, err
-		}
-		location.Coordinates = &point
+	if location.Coordinates == nil {
+		return "", LocationInput{}, fmt.Errorf("%w: coordinates are required", ErrInvalid)
 	}
+	point := *location.Coordinates
+	if err := point.Validate(); err != nil {
+		return "", LocationInput{}, err
+	}
+	location.Coordinates = &point
 	return t, location, nil
 }
 
@@ -105,11 +106,7 @@ func newID() (string, error) {
 	return hex.EncodeToString(b[:]), nil
 }
 
-func NewRequest(kind, location, details string, now time.Time) (Request, error) {
-	return NewRequestAt(kind, LocationInput{Label: location}, details, now)
-}
-
-func NewRequestAt(kind string, location LocationInput, details string, now time.Time) (Request, error) {
+func NewRequest(kind string, location LocationInput, details string, now time.Time) (Request, error) {
 	t, location, err := normalize(kind, location)
 	if err != nil {
 		return Request{}, err
@@ -125,11 +122,7 @@ func NewRequestAt(kind string, location LocationInput, details string, now time.
 	return Request{ID: id, Type: t, Location: location.Label, Directions: location.Directions, Coordinates: location.Coordinates, Details: details, Status: Pending, CreatedAt: now.UTC()}, nil
 }
 
-func NewResource(kind, location string, available bool) (Resource, error) {
-	return NewResourceAt(kind, LocationInput{Label: location}, available)
-}
-
-func NewResourceAt(kind string, location LocationInput, available bool) (Resource, error) {
+func NewResource(kind string, location LocationInput, available bool) (Resource, error) {
 	t, location, err := normalize(kind, location)
 	if err != nil {
 		return Resource{}, err
@@ -164,22 +157,4 @@ func (r *Request) Transition(next RequestStatus) error {
 	}
 	r.Status = next
 	return nil
-}
-
-// SelectResource returns a candidate without reserving it or changing inputs.
-// Stored entities must have been validated and normalized at creation.
-func SelectResource(request Request, resources []Resource) (Resource, error) {
-	if request.Status != Pending {
-		return Resource{}, fmt.Errorf("%w: matching requires a pending request", ErrInvalid)
-	}
-	var selected Resource
-	for _, r := range resources {
-		if r.ID != "" && r.Type == request.Type && r.Location == request.Location && r.Availability && r.Status == Available && (selected.ID == "" || r.ID < selected.ID) {
-			selected = r
-		}
-	}
-	if selected.ID == "" {
-		return Resource{}, ErrNoMatch
-	}
-	return selected, nil
 }

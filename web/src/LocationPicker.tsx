@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as L from "leaflet";
-import "leaflet/dist/leaflet.css";
+import { openStreetMapTiles } from "./mapTiles";
 
 const pin = L.divIcon({ className: "location-pin", iconSize: [24, 32], iconAnchor: [12, 32] });
 
@@ -36,12 +36,7 @@ export default function LocationPicker() {
     const element = container.current!;
     const instance = L.map(element, { scrollWheelZoom: false, worldCopyJump: true }).setView([20, 0], 2);
     map.current = instance;
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
-    }).on("loading", () => setTileError(false))
-      .on("tileerror", () => setTileError(true))
-      .addTo(instance);
+    openStreetMapTiles(setTileError).addTo(instance);
     instance.on("click", (event: L.LeafletMouseEvent) => selectPoint(event.latlng));
     return () => {
       locationAttempt.current++;
