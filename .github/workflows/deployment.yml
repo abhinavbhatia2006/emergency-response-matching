@@ -32,6 +32,8 @@ jobs:
       - name: Show service diagnostics
         if: failure()
         run: docker compose ps && docker compose logs --tail 100
-      - name: Stop stack
+      - name: Stop Compose stack
         if: always()
         run: docker compose down
+      - name: Verify Kubernetes scaling and automatic recovery
+        run: bash scripts/kubernetes-smoke.sh
