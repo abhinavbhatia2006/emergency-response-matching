@@ -54,20 +54,33 @@ for workload in request-api matching-worker; do
   test "$("${project[@]}" get deployment "$workload" -o jsonpath='{.status.readyReplicas}')" = "2"
 done
 python3 scripts/smoke.py --url "$api" --count 12
-echo "PASS: two API and two worker replicas served concurrent assignments"
+echo "PASS: two API and two worker replicas ready; 12 concurrent assignments succeeded"
 
 read -r -a workers <<< "$("${project[@]}" get pods -l app=matching-worker -o jsonpath='{.items[*].metadata.name}')"
 test "${#workers[@]}" = "2"
 before=$("${project[@]}" get pods -l app=matching-worker -o jsonpath='{.items[*].metadata.uid}')
 "${project[@]}" delete pod "${workers[@]}" --timeout=90s
 "${project[@]}" rollout status deployment/matching-worker --timeout=120s
-"${project[@]}" wait --for=condition=Ready pods -l app=matching-worker --timeout=90s
-test "$("${project[@]}" get deployment matching-worker -o jsonpath='{.status.readyReplicas}')" = "2"
-after=$("${project[@]}" get pods -l app=matching-worker -o jsonpath='{.items[*].metadata.uid}')
+for ((attempt = 0; attempt < 90; attempt++)); do
+  ready=$("${project[@]}" get pods -l app=matching-worker -o json | python3 -c '
+import json, sys
+pods = json.load(sys.stdin)["items"]
+for pod in pods:
+    conditions = pod["status"].get("conditions", [])
+    if any(c["type"] == "Ready" and c["status"] == "True" for c in conditions):
+        print(pod["metadata"]["uid"], end=" ")
+')
+  read -r -a after <<< "$ready"
+  if [[ "${#after[@]}" = "2" ]]; then
+    break
+  fi
+  sleep 1
+done
+test "${#after[@]}" = "2"
 for uid in $before; do
-  case " $after " in
+  case " ${after[*]} " in
     *" $uid "*) echo "Deleted worker UID still present: $uid" >&2; exit 1 ;;
   esac
 done
 python3 scripts/geographic-smoke.py --url "$api"
-echo "PASS: replacement workers $after processed a fresh request after removing $before"
+echo "PASS: fresh request matched after workers $before were replaced by ${after[*]}"
