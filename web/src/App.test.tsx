@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App from "./App";
-import { Marker } from "leaflet";
+import { Marker, Polyline } from "leaflet";
 const request = {
   id: "req-123",
   type: "water",
@@ -11,9 +11,18 @@ const request = {
   status: "pending",
   created_at: "2026-11-15T12:00:00Z",
 };
+const depot = {
+  id: "res-123",
+  type: "water",
+  location: "water depot",
+  status: "available",
+  availability: true,
+  coordinates: { latitude: 28.62, longitude: 77.21 },
+};
 type RequestFixture = typeof request & { coordinates?: { latitude: number; longitude: number }; directions?: string; distance_meters?: number; resource_id?: string };
 let rows: RequestFixture[];
 let resources: object[];
+let requestsFail: boolean;
 let ready: boolean;
 let matchFails: boolean;
 let posted: Record<string, unknown>[];
@@ -23,6 +32,7 @@ beforeEach(() => {
   vi.stubGlobal("scrollTo", vi.fn());
   rows = [];
   resources = [];
+  requestsFail = false;
   ready = true;
   matchFails = false;
   posted = [];
@@ -42,7 +52,10 @@ beforeEach(() => {
         rows = [{ ...request, ...body, location: body.location?.toLowerCase() ?? "" }];
         return Response.json(rows[0], { status: 201 });
       }
-      if (input === "/requests") return Response.json(rows);
+      if (input === "/requests")
+        return requestsFail
+          ? Response.json({ error: "unavailable" }, { status: 503 })
+          : Response.json(rows);
       if (input === "/resources" && init?.method === "POST") {
         const body = JSON.parse(String(init.body));
         posted.push(body);
@@ -144,6 +157,165 @@ it("lets users choose among records sharing one pin", async () => {
   await user.click(within(shared).getByRole("button", { name: /resource.*south gate/i }));
   expect(screen.getByRole("heading", { name: "south gate" })).toBeInTheDocument();
   expect(within(shared).getByRole("button", { name: /resource.*south gate/i })).toHaveAttribute("aria-pressed", "true");
+});
+
+it("opens a resource from the ledger and keeps an invalid coordinate record accessible there", async () => {
+  resources = [depot, {
+    ...depot,
+    id: "res-invalid",
+    location: "old depot",
+    coordinates: { latitude: 91, longitude: 77.21 },
+  }];
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(screen.getByRole("tab", { name: /Resources/ }));
+  const invalid = await screen.findByRole("row", { name: /old depot/i });
+  expect(within(invalid).getByText("No coordinates saved")).toBeInTheDocument();
+  expect(within(invalid).queryByRole("button", { name: /show.*on map/i })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Show resource res-123 on map" }));
+  expect(screen.getByRole("heading", { name: "Response map" })).toHaveFocus();
+  const map = within(screen.getByRole("region", { name: "Request and resource locations" }));
+  expect(map.getByRole("button", { name: /resource.*water depot/i })).toHaveAttribute("aria-pressed", "true");
+  expect(map.queryByRole("button", { name: /old depot/i })).not.toBeInTheDocument();
+  expect(screen.getByText(/1 record has no usable coordinates/i)).toBeInTheDocument();
+});
+
+it("draws an assigned resource link along the short path across the dateline", async () => {
+  rows = [{
+    ...request, status: "matched", resource_id: depot.id, distance_meters: 33358,
+    coordinates: { latitude: 0, longitude: 179.9 },
+  }];
+  resources = [{ ...depot, coordinates: { latitude: 0, longitude: -179.8 } }];
+  const added = vi.spyOn(Polyline.prototype, "addTo");
+  try {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Show request req-123 on map" }));
+    expect(await screen.findByText("Straight-line distance: 33.358 km")).toBeInTheDocument();
+    const link = added.mock.instances[0];
+    if (!(link instanceof Polyline)) throw new Error("Selecting the matched request did not draw a line");
+    expect(link.getLatLngs()).toEqual([{ lat: 0, lng: 179.9 }, { lat: 0, lng: 180.2 }]);
+  } finally {
+    added.mockRestore();
+  }
+});
+
+it("groups opposite signed dateline coordinates and reports a zero-distance assignment", async () => {
+  rows = [{
+    ...request, status: "matched", resource_id: depot.id, distance_meters: 0,
+    coordinates: { latitude: 0, longitude: 180 },
+  }];
+  resources = [{ ...depot, coordinates: { latitude: 0, longitude: -180 } }];
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: "Show request req-123 on map" }));
+  const map = screen.getByRole("region", { name: "Request and resource locations" });
+  expect(within(map).getByRole("button", { name: "2 records at this pin" })).toHaveAttribute("aria-pressed", "true");
+  const details = within(screen.getByRole("region", { name: "Selected map record" }));
+  expect(details.getByText("0 km")).toBeInTheDocument();
+  expect(map.querySelector(".overview-match-line")).not.toBeInTheDocument();
+});
+
+it("updates a selected map request after completion and removes the active assignment line", async () => {
+  const matched = {
+    ...request, status: "matched", resource_id: depot.id, distance_meters: 1250,
+    coordinates: { latitude: 28.61, longitude: 77.21 },
+  };
+  rows = [matched];
+  resources = [{ ...depot, status: "reserved", availability: false }];
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(await screen.findByRole("button", { name: "Show request req-123 on map" }));
+  const map = screen.getByRole("region", { name: "Request and resource locations" });
+  expect(map.querySelector(".overview-match-line")).toBeInTheDocument();
+  rows = [{ ...matched, status: "completed" }];
+  resources = [{ ...depot, status: "unavailable", availability: false }];
+  await user.click(screen.getByRole("button", { name: "Refresh data" }));
+  const details = within(screen.getByRole("region", { name: "Selected map record" }));
+  expect(await details.findByText("Completed")).toBeInTheDocument();
+  expect(details.getByText("Previous assignment")).toBeInTheDocument();
+  expect(details.getByText("1.25 km")).toBeInTheDocument();
+  expect(within(map).getByRole("button", { name: /resource.*water depot/i })).not.toHaveClass("overview-pin--assigned");
+  expect(map.querySelector(".overview-match-line")).not.toBeInTheDocument();
+});
+
+it("keeps saved map pins selectable when map tiles fail", async () => {
+  resources = [depot];
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(screen.getByRole("button", { name: "Map" }));
+  const map = screen.getByRole("region", { name: "Request and resource locations" });
+  const pin = await within(map).findByRole("button", { name: /resource.*water depot/i });
+  const tile = map.querySelector("img.leaflet-tile");
+  if (!tile) throw new Error("The map did not request a tile");
+  fireEvent.error(tile);
+  expect(screen.getByRole("status")).toHaveTextContent(/map tiles could not load/i);
+  await user.click(pin);
+  expect(screen.getByRole("heading", { name: "water depot" })).toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent(/saved pins are still available/i);
+});
+
+it("recovers from a partial map data outage without leaving a stale dashboard error", async () => {
+  requestsFail = true;
+  resources = [depot];
+  const user = userEvent.setup();
+  render(<App />);
+  expect(await screen.findByRole("alert")).toHaveTextContent(/live data could not be loaded/i);
+  await user.click(screen.getByRole("button", { name: "Map" }));
+  expect(screen.getByRole("status")).toHaveTextContent(/some map records could not be loaded/i);
+  const map = within(screen.getByRole("region", { name: "Request and resource locations" }));
+  expect(map.getByRole("button", { name: /resource.*water depot/i })).toBeInTheDocument();
+
+  requestsFail = false;
+  rows = [{ ...request, coordinates: { latitude: 28.61, longitude: 77.21 } }];
+  await user.click(screen.getByRole("button", { name: "Refresh data" }));
+  expect(await map.findByRole("button", { name: /request.*delhi/i })).toBeInTheDocument();
+  expect(screen.queryByText(/some map records could not be loaded/i)).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Overview" }));
+  expect(screen.getByLabelText("Pending requests")).toHaveTextContent("1");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+it("clears a stale dashboard data warning when polling restores map records", async () => {
+  requestsFail = true;
+  resources = [depot];
+  vi.useFakeTimers();
+  try {
+    await act(async () => { render(<App />); });
+    expect(screen.getByRole("alert")).toHaveTextContent(/live data could not be loaded/i);
+    fireEvent.click(screen.getByRole("button", { name: "Map" }));
+    expect(screen.getByRole("status")).toHaveTextContent(/some map records could not be loaded/i);
+
+    requestsFail = false;
+    rows = [{ ...request, coordinates: { latitude: 28.61, longitude: 77.21 } }];
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+    const map = within(screen.getByRole("region", { name: "Request and resource locations" }));
+    expect(map.getByRole("button", { name: /request.*delhi/i })).toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("keeps a request lookup error visible after a successful background refresh", async () => {
+  vi.useFakeTimers();
+  try {
+    await act(async () => { render(<App />); });
+    fireEvent.change(screen.getByLabelText("Request ID"), { target: { value: "missing" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Look up request" }));
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent("Request not found");
+
+    rows = [request];
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+    expect(screen.getByLabelText("Pending requests")).toHaveTextContent("1");
+    expect(screen.getByRole("alert")).toHaveTextContent("Request not found");
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("offers a third Shard details activity tab", async () => {

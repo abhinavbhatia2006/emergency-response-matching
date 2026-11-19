@@ -50,6 +50,7 @@ const icons = {
   shelter: Home,
 };
 const coordinateLabel = ({ latitude, longitude }: Coordinates) => `${latitude}, ${longitude}`;
+type DashboardError = { source: "refresh" | "action"; message: string };
 async function api<T>(
   path: string,
   method = "GET",
@@ -170,7 +171,7 @@ export default function App() {
     [selected, setSelected] = useState<RequestRecord | null>(null);
   const [busy, setBusy] = useState(false),
     [refreshing, setRefreshing] = useState(false),
-    [error, setError] = useState(""),
+    [error, setError] = useState<DashboardError | null>(null),
     [notice, setNotice] = useState(""),
     [lookup, setLookup] = useState(""),
     [updated, setUpdated] = useState<Date | null>(null);
@@ -201,17 +202,17 @@ export default function App() {
         : "offline",
     );
     if (
-      requestResult.status === "rejected" ||
-      resourceResult.status === "rejected"
-    )
-      setError(
-        "Live data could not be loaded. Check the service connection and refresh.",
-      );
-    if (
       requestResult.status === "fulfilled" &&
       resourceResult.status === "fulfilled"
-    )
+    ) {
+      setError((current) => current?.source === "refresh" ? null : current);
       setUpdated(new Date());
+    } else {
+      setError({
+        source: "refresh",
+        message: "Live data could not be loaded. Check the service connection and refresh.",
+      });
+    }
     setRefreshing(false);
   }, []);
   useEffect(() => {
@@ -219,18 +220,23 @@ export default function App() {
     const timer = setInterval(() => void refresh(), 15000);
     return () => clearInterval(timer);
   }, [refresh]);
+  function refreshData() {
+    setError(null);
+    void refresh();
+  }
   async function action(work: () => Promise<void>) {
     setBusy(true);
-    setError("");
+    setError(null);
     setNotice("");
     try {
       await work();
     } catch (err) {
-      setError(
-        err instanceof Error
+      setError({
+        source: "action",
+        message: err instanceof Error
           ? err.message
           : "The service could not be reached. Please try again.",
-      );
+      });
     } finally {
       setBusy(false);
     }
@@ -242,7 +248,7 @@ export default function App() {
     }
   };
   const openForm = (kind: "request" | "resource") => {
-    setError("");
+    setError(null);
     setNotice("");
     setForm(kind);
   };
@@ -314,8 +320,8 @@ export default function App() {
       {error && (
         <div role="alert" className="feedback error">
           <CircleHelp size={16} />
-          <span>{error}</span>
-          <button aria-label="Dismiss error" onClick={() => setError("")}>
+          <span>{error.message}</span>
+          <button aria-label="Dismiss error" onClick={() => setError(null)}>
             <X size={15} />
           </button>
         </div>
@@ -404,7 +410,7 @@ export default function App() {
               selectedKey={mapSelection}
               onSelect={setMapSelection}
               refreshing={refreshing}
-              onRefresh={() => void refresh()}
+              onRefresh={refreshData}
             />
           ) : <>
           <div className="page-heading">
@@ -506,10 +512,7 @@ export default function App() {
                 <button
                   className="refresh"
                   disabled={refreshing}
-                  onClick={() => {
-                    setError("");
-                    void refresh();
-                  }}
+                  onClick={refreshData}
                   aria-label="Refresh data"
                 >
                   <RefreshCw size={13} />
