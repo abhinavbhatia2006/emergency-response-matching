@@ -903,7 +903,7 @@ export default function App() {
                   <MapPin size={15} /> Show on map
                 </button>
               )}
-              {selected.status === "pending" && validCoordinates(selected.coordinates) && (
+              {selected.status === "pending" && (
                 <button
                   className="primary"
                   disabled={busy}
@@ -965,7 +965,7 @@ export default function App() {
               {selected.status === "pending"
                 ? validCoordinates(selected.coordinates)
                   ? `Matching selects the nearest available same-type resource using geographic coordinates. ${limitDescription}`
-                  : "This request needs coordinates before it can be matched."
+                  : "This request has no coordinates and matches by district."
                 : selected.status === "matched"
                   ? "Complete this request after assistance is delivered. Cancelling releases the assigned resource."
                   : "This request is closed and its status cannot be changed."}

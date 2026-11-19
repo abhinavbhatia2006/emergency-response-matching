@@ -101,8 +101,19 @@ def main():
     call('POST', '/match/' + pending['id'], expected=409)
     assert call('PUT', '/requests/' + pending['id'] + '/status', {'status': 'cancelled'})['status'] == 'cancelled'
     call('POST', '/resources', {'type': 'food', 'location': area, 'coordinates': coordinates}, 400)
-    call('POST', '/resources', {'type': 'food', 'location': area, 'availability': True}, 400)
-    call('POST', '/requests', {'type': 'food', 'location': area, 'details': 'Missing coordinates'}, 400)
+    call('POST', '/requests', {'type': 'food', 'location': area,
+                              'coordinates': None, 'details': 'Invalid coordinates'}, 400)
+    district = area + '-legacy'
+    legacy_resource = call('POST', '/resources', {
+        'type': 'water', 'location': district, 'availability': True}, 201)
+    legacy_request = call('POST', '/requests', {
+        'type': 'water', 'location': district, 'details': 'Existing district API contract'}, 201)
+    wait(lambda: call('GET', '/requests/' + legacy_request['id'])['status'] == 'matched',
+         'legacy district assignment')
+    legacy_match = call('POST', '/match/' + legacy_request['id'])
+    assert legacy_match['resource_id'] == legacy_resource['id']
+    assert 'coordinates' not in legacy_match and 'distance_meters' not in legacy_match
+    call('PUT', '/requests/' + legacy_request['id'] + '/status', {'status': 'completed'})
     call('GET', '/requests/' + '0' * 32, expected=404)
     print('PASS: idempotent match, lifecycle, resource reservation, and error contracts', flush=True)
     print(json.dumps({'url': base, 'location': area, 'request_ids': [r['id'] for r in requests],

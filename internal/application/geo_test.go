@@ -250,7 +250,7 @@ func TestGeoCreationCopiesAndValidatesCoordinates(t *testing.T) {
 		t.Fatal("coordinates not copied")
 	}
 	before := len(*writes)
-	for _, bad := range []*domain.Coordinates{nil, {Latitude: 91}, {Longitude: 181}, {Latitude: math.NaN()}, {Longitude: math.Inf(1)}} {
+	for _, bad := range []*domain.Coordinates{{Latitude: 91}, {Longitude: 181}, {Latitude: math.NaN()}, {Longitude: math.Inf(1)}} {
 		location.Coordinates = bad
 		if _, e := s.CreateRequest(context.Background(), "food", location, "meal"); !errors.Is(e, domain.ErrInvalid) {
 			t.Fatal(e)
@@ -270,7 +270,7 @@ func TestCoordinateHTTPInput(t *testing.T) {
 			status      int
 		}{
 			{`{"latitude":0,"longitude":0}`, 201}, {`{"latitude":90,"longitude":-180}`, 201},
-			{"", 400}, {`{"latitude":1}`, 400}, {`{"longitude":1}`, 400}, {`null`, 400},
+			{"", 201}, {`{"latitude":1}`, 400}, {`{"longitude":1}`, 400}, {`null`, 400},
 			{`{"latitude":null,"longitude":1}`, 400}, {`{"latitude":1,"longitude":null}`, 400},
 			{`{"latitude":91,"longitude":0}`, 400}, {`{"latitude":0,"longitude":181}`, 400},
 			{`{"latitude":0,"longitude":0,"extra":1}`, 400},
@@ -296,9 +296,11 @@ func TestCoordinateHTTPInput(t *testing.T) {
 					var out struct {
 						Coordinates *domain.Coordinates `json:"coordinates"`
 					}
-					json.Unmarshal(w.Body.Bytes(), &out)
-					if out.Coordinates == nil || len(*writes) != 2 {
-						t.Fatal("coordinates or atomic job missing")
+					if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+						t.Fatal(err)
+					}
+					if (out.Coordinates == nil) != (tc.coordinates == "") || len(*writes) != 2 {
+						t.Fatal("unexpected saved coordinates or missing atomic job")
 					}
 				} else if len(*writes) != 0 {
 					t.Fatal("invalid input persisted")
@@ -338,26 +340,26 @@ func TestGeoCASConflictRecomputesSelectionAndDistance(t *testing.T) {
 	}
 }
 
-func TestGeoDoesNotMatchRequestWithoutCoordinates(t *testing.T) {
-	s, writes := geoFixture(t, nil)
-	ctx := context.Background()
-	request := domain.Request{ID: geoRequestID, Type: domain.Food, Location: "district-a", Status: domain.Pending}
-	resource := geoResource("local", "district-a", 0)
-	if err := s.batch(ctx, []storage.Mutation{
-		put("request/"+request.ID, request, 1),
-		put("resource/"+resource.ID, resource, 0),
-	}); err != nil {
-		t.Fatal(err)
-	}
-	before := len(*writes)
-	if _, err := s.Match(ctx, request.ID); !errors.Is(err, domain.ErrNoMatch) {
-		t.Fatalf("expected no match, got %v", err)
-	}
-	if _, err := s.Match(ctx, "rescan"); err != nil {
-		t.Fatal(err)
-	}
-	if len(*writes) != before {
-		t.Fatal("coordinate-less request triggered a write")
+func TestGeoLegacyDistrictMatching(t *testing.T) {
+	for _, trigger := range []string{geoRequestID, "rescan"} {
+		t.Run(trigger, func(t *testing.T) {
+			s, _ := geoFixture(t, []domain.Resource{
+				geoResource("near-other", "other", 0),
+				geoResource("far-local", "district-a", 80),
+			})
+			ctx := context.Background()
+			request := domain.Request{ID: geoRequestID, Type: domain.Food, Location: "district-a", Status: domain.Pending}
+			if err := s.batch(ctx, []storage.Mutation{put("request/"+request.ID, request, 1)}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.Match(ctx, trigger); err != nil {
+				t.Fatal(err)
+			}
+			got, err := s.GetRequest(ctx, request.ID)
+			if err != nil || got.Status != domain.Matched || got.ResourceID != "far-local" || got.DistanceMeters != nil {
+				t.Fatalf("legacy match=%+v error=%v", got, err)
+			}
+		})
 	}
 }
 

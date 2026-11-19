@@ -7,6 +7,35 @@ import (
 	"time"
 )
 
+func TestSelectResource(t *testing.T) {
+	request := Request{Type: Water, Location: "north", Status: Pending}
+	resources := []Resource{
+		{ID: "wrong-type", Type: Food, Location: "north", Availability: true, Status: Available},
+		{ID: "wrong-location", Type: Water, Location: "south", Availability: true, Status: Available},
+		{ID: "reserved", Type: Water, Location: "north", Availability: true, Status: Reserved},
+		{ID: "unavailable", Type: Water, Location: "north", Availability: false, Status: Available},
+		{ID: "z", Type: Water, Location: "north", Availability: true, Status: Available},
+		{ID: "a", Type: Water, Location: "north", Availability: true, Status: Available},
+	}
+	got, err := SelectResource(request, resources)
+	if err != nil || got.ID != "a" {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	if resources[0].ID != "wrong-type" || resources[4].ID != "z" {
+		t.Fatal("mutated input order")
+	}
+	if _, err := SelectResource(request, resources[:4]); !errors.Is(err, ErrNoMatch) {
+		t.Fatalf("expected no match, got %v", err)
+	}
+	if _, err := SelectResource(request, nil); !errors.Is(err, ErrNoMatch) {
+		t.Fatalf("expected no match, got %v", err)
+	}
+	request.Status = Completed
+	if _, err := SelectResource(request, resources); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("must reject terminal request: %v", err)
+	}
+}
+
 func TestCreateRequest(t *testing.T) {
 	now := time.Date(2026, 11, 11, 12, 0, 0, 0, time.FixedZone("IST", 19800))
 	ids := map[string]bool{}

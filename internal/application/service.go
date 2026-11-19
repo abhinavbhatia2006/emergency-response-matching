@@ -216,16 +216,32 @@ func (s *Service) Match(ctx context.Context, id string) (domain.Request, error) 
 		if e != nil {
 			return domain.Request{}, e
 		}
+		resources, e := s.ListResources(ctx)
+		if e != nil {
+			return domain.Request{}, e
+		}
 		for _, request := range requests {
-			if request.Status != domain.Pending || request.Coordinates == nil {
+			if request.Status != domain.Pending {
 				continue
 			}
-			_, e := s.Match(ctx, request.ID)
+			if request.Coordinates == nil {
+				if _, e := domain.SelectResource(request, resources); errors.Is(e, domain.ErrNoMatch) {
+					continue
+				}
+			}
+			matched, e := s.Match(ctx, request.ID)
 			if errors.Is(e, domain.ErrNoMatch) {
 				continue
 			}
 			if e != nil {
 				return domain.Request{}, e
+			}
+			for i := range resources {
+				if resources[i].ID == matched.ResourceID {
+					resources[i].Availability = false
+					resources[i].Status = domain.Reserved
+					break
+				}
 			}
 		}
 		return domain.Request{}, nil

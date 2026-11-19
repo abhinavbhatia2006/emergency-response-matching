@@ -46,9 +46,9 @@ In either creation form, tap the OpenStreetMap map or drag its pin to choose the
 
 **Name** is an optional, user-supplied label for the pin. The dashboard displays it alongside the coordinates, with **Pinned location** as the fallback. The system does not verify that the name corresponds to the coordinates. Geographic matching uses the pin's coordinates.
 
-Both creation endpoints require a `coordinates` object with numeric `latitude` and `longitude`. Missing or invalid coordinates return HTTP 400. Matching chooses the nearest available same-type resource within `MAX_MATCH_DISTANCE_METERS` (default 50000), and matched responses include `distance_meters`. `GET /config` returns the configured maximum and `distance_method: "haversine"`. See [geographic matching](geographic-matching.md).
+Both creation endpoints accept a `coordinates` object with numeric `latitude` and `longitude`. An incomplete, invalid, or explicitly null coordinate object returns HTTP 400. Matching chooses the nearest available same-type resource within `MAX_MATCH_DISTANCE_METERS` (default 50000), and geographic matches include `distance_meters`. Existing clients can omit `coordinates` and supply a nonempty district in `location`. District-only requests still match by exact district and report no geographic distance. `GET /config` returns the configured maximum and `distance_method: "haversine"`. See [geographic matching](geographic-matching.md).
 
-Omitting the optional `location` name returns an empty `location` and displays **Pinned location** in the dashboard. Both create endpoints also accept an optional `directions` string of up to 200 characters. The name and directions are for display.
+For a pinned record, omitting the optional name returns an empty `location` and displays **Pinned location** in the dashboard. Both creation endpoints accept an optional `directions` string of up to 200 characters for records with coordinates. The name and directions are for display.
 
 ## Response map
 

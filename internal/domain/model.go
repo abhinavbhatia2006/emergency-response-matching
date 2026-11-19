@@ -88,7 +88,10 @@ func normalize(kind string, location LocationInput) (Type, LocationInput, error)
 		return "", LocationInput{}, fmt.Errorf("%w: directions must contain at most 200 characters", ErrInvalid)
 	}
 	if location.Coordinates == nil {
-		return "", LocationInput{}, fmt.Errorf("%w: coordinates are required", ErrInvalid)
+		if location.Label == "" || location.Directions != "" {
+			return "", LocationInput{}, fmt.Errorf("%w: a district is required without coordinates, and directions require coordinates", ErrInvalid)
+		}
+		return t, location, nil
 	}
 	point := *location.Coordinates
 	if err := point.Validate(); err != nil {
@@ -157,4 +160,26 @@ func (r *Request) Transition(next RequestStatus) error {
 	}
 	r.Status = next
 	return nil
+}
+
+// SelectResource selects an available resource for a legacy district request.
+// Stored locations have already been normalized.
+func SelectResource(request Request, resources []Resource) (Resource, error) {
+	if request.Status != Pending {
+		return Resource{}, fmt.Errorf("%w: matching requires a pending request", ErrInvalid)
+	}
+	var selected Resource
+	for _, resource := range resources {
+		if resource.ID == "" || resource.Type != request.Type || resource.Location != request.Location ||
+			!resource.Availability || resource.Status != Available {
+			continue
+		}
+		if selected.ID == "" || resource.ID < selected.ID {
+			selected = resource
+		}
+	}
+	if selected.ID == "" {
+		return Resource{}, ErrNoMatch
+	}
+	return selected, nil
 }

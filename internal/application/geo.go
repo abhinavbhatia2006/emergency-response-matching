@@ -7,8 +7,12 @@ import (
 	"github.com/abhinavbhatia2006/emergency-response-matching/internal/domain"
 )
 
-// Pointer fields distinguish valid zero from omitted or null coordinate members.
+// An omitted coordinate object preserves the district API. An explicit object
+// must contain both numbers, and an explicit null is invalid.
 func decodeCoordinates(raw json.RawMessage) (*domain.Coordinates, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
 	var input struct {
 		Latitude  *float64 `json:"latitude"`
 		Longitude *float64 `json:"longitude"`
@@ -23,7 +27,8 @@ func decodeCoordinates(raw json.RawMessage) (*domain.Coordinates, error) {
 
 func (s *Service) selectResource(request domain.Request, resources []domain.Resource) (domain.Resource, *float64, error) {
 	if request.Coordinates == nil {
-		return domain.Resource{}, nil, domain.ErrNoMatch
+		resource, err := domain.SelectResource(request, resources)
+		return resource, nil, err
 	}
 	if request.Coordinates.Validate() != nil {
 		return domain.Resource{}, nil, ErrUnavailable

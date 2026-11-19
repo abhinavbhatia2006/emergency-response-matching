@@ -384,14 +384,15 @@ it.each([[12345, "12.345 km"], [0, "0 km"], [50000, "50 km"]])("shows the assign
   expect(dialog.getByText(/straight-line geographic distance/i)).toBeInTheDocument();
   expect(dialog.queryByRole("link")).not.toBeInTheDocument();
 });
-it("shows when a request has no coordinates and omits the match action", async () => {
+it("lets a legacy request match by district without showing a geographic distance", async () => {
   rows = [request];
   const user = userEvent.setup();
   render(<App />);
   await user.click(await screen.findByRole("button", { name: "View request req-123" }));
   const dialog = within(screen.getByRole("dialog"));
   expect(dialog.getByText("No coordinates saved")).toBeInTheDocument();
-  expect(dialog.queryByRole("button", { name: "Find a match" })).not.toBeInTheDocument();
+  await user.click(dialog.getByRole("button", { name: "Find a match" }));
+  expect(await dialog.findByText("res-123")).toBeInTheDocument();
   expect(dialog.queryByText(/\d.*km/)).not.toBeInTheDocument();
 });
 it("shows resource coordinates and distinguishes coordinate-less resources in the ledger", async () => {
