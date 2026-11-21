@@ -11,7 +11,6 @@ import {
   type ReactNode,
 } from "react";
 import {
-  Activity,
   ArrowRight,
   ArrowUpRight,
   Box,
@@ -342,10 +341,8 @@ export default function App() {
     <>
       <header className="site-header">
         <div className="brand">
-          <span className="brand-icon">
-            <Activity size={24} strokeWidth={2.5} />
-          </span>
-          <strong>Relay</strong>
+          <img className="brand-icon" src="/sahara.svg" width="40" height="40" alt="" />
+          <strong>Sahara</strong>
           <span className="service-name">Emergency response coordination</span>
         </div>
         <div className="connection"><span className={`health ${health === "offline" ? "offline" : ""}`}>
@@ -720,7 +717,7 @@ export default function App() {
           </div>
           </>}
           <footer>
-            <span>Relay</span>
+            <span>Sahara</span>
             <span>
               {updated
                 ? `Last updated ${updated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`

@@ -20,7 +20,6 @@ button:hover:not(:disabled) { filter: brightness(.93); }
 :focus-visible { outline: 3px solid #3095f5; outline-offset: 2px; }
 .site-header { display: flex; align-items: center; justify-content: space-between; gap: 24px; background: white; padding: 0 max(4%, calc((100vw - 1100px) / 2)); color: var(--ink); border-bottom: 1px solid var(--rule); }
 .brand { display: flex; align-items: center; gap: 10px; white-space: nowrap; font-size: 20px; font-weight: 650; }
-.brand-icon { display: grid; place-items: center; color: white; background: #165b44; width: 33px; height: 33px; border-radius: 6px; }
 nav { display: flex; gap: 3px; }
 .nav-item { background: transparent; color: #244c3e; padding: 18px 15px; border-bottom: 3px solid transparent; font-size: 14px; }
 .nav-item.active { color: var(--signal); background: #f4f8f5; border-color: var(--signal); }
@@ -127,7 +126,7 @@ textarea { min-height: 85px; resize: vertical; }
 /* The masthead identifies the service; navigation sits on its own line. */
 .site-header { display: grid; grid-template-columns: 1fr auto; gap: 0; padding: 0; border-top: 4px solid #b35028; }
 .brand { padding: 20px 0 20px max(4vw, calc((100vw - 1180px) / 2)); gap: 12px; font-size: 32px; }
-.brand-icon { background: #254960; border-radius: 1px; }
+.brand-icon { width: 40px; height: 40px; flex: none; }
 .service-name { font: 15px/1.35 "Segoe UI", sans-serif; color: #425564; border-left: 1px solid #b8c1c8; padding-left: 14px; white-space: normal; }
 .connection { margin-right: max(4vw, calc((100vw - 1180px) / 2)); align-self: center; font-size: 12px; white-space: nowrap; }
 .site-header nav { grid-column: 1 / -1; background: #203e52; padding-inline: max(4vw, calc((100vw - 1180px) / 2)); gap: 0; }
@@ -161,7 +160,7 @@ h1, .overview-map .overview-map__heading h1 { font-family: "Segoe UI", sans-seri
   .brand { font-size: 24px; padding-block: 12px; gap: 7px; }
 }
 @media (max-width: 480px) {
-  .brand-icon { display: none; }
+  .brand-icon { width: 26px; height: 26px; }
   .connection { font-size: 10px; }
   .nav-item { padding-inline: 5px; }
 }

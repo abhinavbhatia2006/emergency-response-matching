@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Sahara</title>
+  <circle cx="32" cy="20" r="13" fill="#d9532f"/>
+  <path fill="#0f1e36" d="M1 34c5 8 12 12 21 14-5-3-9-7-11-12 6 6 13 9 21 9s15-3 21-9c-2 5-6 9-11 12 9-2 16-6 21-14-4 15-16 23-31 23S5 49 1 34Z"/>
+</svg>

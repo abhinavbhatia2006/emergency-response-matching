@@ -1,4 +1,4 @@
-# Emergency Response Matching
+# Sahara
 
 A Go system connecting emergency requests with available resources by type and location.
 
