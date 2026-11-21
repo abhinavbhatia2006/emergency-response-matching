@@ -481,15 +481,17 @@ export default function App() {
                 <div>
                   <h2>Local activity</h2>
                 </div>
-                <button
-                  className="refresh"
-                  disabled={refreshing}
-                  onClick={refreshData}
-                  aria-label="Refresh data"
-                >
-                  <RefreshCw size={13} />
-                  {refreshing ? "Updating" : "Refresh"}
-                </button>
+                {tab !== "shard details" && (
+                  <button
+                    className="refresh"
+                    disabled={refreshing}
+                    onClick={refreshData}
+                    aria-label="Refresh data"
+                  >
+                    <RefreshCw size={13} />
+                    {refreshing ? "Updating" : "Refresh"}
+                  </button>
+                )}
               </div>
               <div className="tabs" role="tablist" aria-label="Activity type">
                 <button

@@ -318,13 +318,19 @@ it("keeps a request lookup error visible after a successful background refresh",
   }
 });
 
-it("offers a third Shard details activity tab", async () => {
+it("shows only the relevant refresh button in each activity tab", async () => {
   const user = userEvent.setup();
   render(<App />);
+  expect(screen.getByRole("button", { name: "Refresh data" })).toBeInTheDocument();
   await user.click(screen.getByRole("tab", { name: "Shard details" }));
   expect(screen.getByRole("tab", { name: "Shard details" })).toHaveAttribute("aria-selected", "true");
   expect(screen.getByRole("tabpanel", { name: "Shard details" })).toBeInTheDocument();
   expect(await screen.findByText(/development view/i)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Refresh shard details" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Refresh data" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("tab", { name: /Resources/ }));
+  expect(screen.getByRole("button", { name: "Refresh data" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Refresh shard details" })).not.toBeInTheDocument();
 });
 it("keeps keyboard focus inside the dialog after completing a request", async () => {
   rows = [{ ...request, status: "matched" }];
