@@ -183,7 +183,30 @@ h1, .overview-map .overview-map__heading h1 { font-family: "Segoe UI", sans-seri
 .distance-summary { border-block: 1px solid var(--rule); padding: 18px 0; }
 .distance-kicker { font: 9px/1.6 var(--mono); color: var(--signal); letter-spacing: .3px; }
 .assigned-distance { display: block; font: 38px/1.4 var(--display); margin-block: 5px; }
-.matching-limit { display: block; margin-top: 4px; color: var(--signal); font: 10px/1.6 var(--mono); }
+/* The light notice sits directly below the dark navigation. */
+.matching-strip {
+  display: flex; align-items: center; gap: 14px; padding: 7px max(4vw, calc((100vw - 1180px) / 2));
+  background: #fff3d1; border-bottom: 1px solid #dac48d; color: #0f1e36; font-size: 13px;
+}
+.matching-strip-label { flex: none; border-left: 3px solid #b44225; padding-left: 8px; }
+.matching-strip-window { min-width: 0; flex: 1; overflow: hidden; }
+.matching-strip-track { display: flex; width: max-content; animation: matching-scroll 28s linear infinite; }
+.matching-strip-message { padding-right: 4rem; white-space: nowrap; }
+.matching-strip button { background: transparent; color: inherit; border: 1px solid #756849; padding: 4px 9px; border-radius: 3px; }
+@keyframes matching-scroll { to { transform: translateX(-50%); } }
+.matching-strip[data-paused="true"] .matching-strip-track { animation: none; width: auto; }
+.matching-strip[data-paused="true"] .matching-strip-message { white-space: normal; padding-right: 0; }
+.matching-strip[data-paused="true"] [aria-hidden="true"] { display: none; }
+@media (max-width: 600px) {
+  .matching-strip { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; }
+  .matching-strip-window { grid-row: 2; grid-column: 1 / -1; }
+  .matching-strip button { grid-column: 2; grid-row: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .matching-strip-track { animation: none; width: auto; }
+  .matching-strip-message { white-space: normal; padding-right: 0; }
+  .matching-strip [aria-hidden="true"], .matching-strip button { display: none; }
+}
 .legacy-note { font: 11px/1.7 var(--mono); color: #6b5c37; background: #eae3cf; border-left: 2px solid #a08b5f; padding: 11px 13px; }
 @media (max-width: 580px) { .table-wrap table { min-width: 430px; } .coordinate-meta { max-width: 150px; } .coordinate-fields { gap: 10px; } }
 

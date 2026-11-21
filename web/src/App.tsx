@@ -172,6 +172,7 @@ export default function App() {
     [notice, setNotice] = useState(""),
     [lookup, setLookup] = useState(""),
     [updated, setUpdated] = useState<Date | null>(null);
+  const [tickerPaused, setTickerPaused] = useState(false);
   const [maxDistance, setMaxDistance] = useState<number | null>(null);
   const limitDescription = maxDistance === null ? "Matching limit unavailable." : `Maximum matching distance: ${kilometers(maxDistance)}.`;
   const refresh = useCallback(async () => {
@@ -380,6 +381,25 @@ export default function App() {
           ))}
         </nav>
       </header>
+      <section className="matching-strip" aria-label="Current matching area" data-paused={tickerPaused}>
+        <strong className="matching-strip-label">Current matching area</strong>
+        <div className="matching-strip-window">
+          <div className="matching-strip-track">
+            {[false, true].map(copy => (
+              <span className="matching-strip-message" key={String(copy)} aria-hidden={copy || undefined}>
+                <strong aria-label={copy ? undefined : "Matching distance limit"}>
+                  {maxDistance === null ? "Matching limit unavailable" : `${kilometers(maxDistance)} maximum`}
+                </strong>
+                {" · Requests match with the nearest available resource of the same type by straight-line distance."}
+              </span>
+            ))}
+          </div>
+        </div>
+        <button type="button" onClick={() => setTickerPaused(value => !value)}
+          aria-label={tickerPaused ? "Resume scrolling" : "Pause scrolling"}>
+          {tickerPaused ? "Resume" : "Pause"}
+        </button>
+      </section>
       <div className="shell">
 
         <main>
@@ -680,13 +700,6 @@ export default function App() {
                     <ArrowRight size={13} />
                   </button>
                 </form>
-              </section>
-              <section className="panel side-content">
-                <h3>Matching area</h3>
-                <p>Requests match with the nearest available resource of the same type by straight-line distance.</p>
-                <strong className="matching-limit" aria-label="Matching distance limit">
-                  {maxDistance === null ? "Matching limit unavailable" : `${kilometers(maxDistance)} maximum`}
-                </strong>
               </section>
               <section className="panel side-content workflow">
                 <h3>How matching works</h3>
