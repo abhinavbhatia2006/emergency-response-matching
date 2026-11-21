@@ -345,7 +345,7 @@ export default function App() {
           <strong>Sahara</strong>
           <span className="service-name">Emergency response coordination</span>
         </div>
-        <div className="connection"><span className={`health ${health === "offline" ? "offline" : ""}`}>
+        <div className="connection"><span className={`health ${health}`}>
               <span className="dot" />
               {health === "ready"
                 ? "Service connected"
