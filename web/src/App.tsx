@@ -28,7 +28,6 @@ import {
   Package,
   Plus,
   RefreshCw,
-  Search,
   ShieldCheck,
   Truck,
   Utensils,
@@ -342,14 +341,13 @@ export default function App() {
   );
   return (
     <>
-      <aside>
+      <header className="site-header">
         <div className="brand">
           <span className="brand-icon">
             <Activity size={24} strokeWidth={2.5} />
           </span>
-          RELAY<span className="brand-stop">®</span>
+          Relay
         </div>
-        <p className="workspace-label">Emergency response<br />Coordination desk</p>
         <nav aria-label="Main navigation">
           {[
             { name: "Overview", icon: LayoutDashboard },
@@ -376,11 +374,7 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <div className="sidebar-bottom">
-          <span className="desk-code">OPERATIONS / 01</span>
-          <strong>People. Resources. Response.</strong>
-        </div>
-      </aside>
+      </header>
       <div className="shell">
         <header className="topbar">
           <div className="breadcrumb">
@@ -397,9 +391,6 @@ export default function App() {
                   ? "Checking service…"
                   : "Service unavailable"}
             </span>
-            <span className="avatar" title="Response coordination">
-              RESPONSE NETWORK
-            </span>
           </div>
         </header>
         <main>
@@ -413,23 +404,12 @@ export default function App() {
               onRefresh={refreshData}
             />
           ) : <>
-          <div className="page-heading">
+          <div className={nav === "Overview" ? "page-heading directory-heading" : "page-heading"}>
             <div>
-              <p className="eyebrow"><span className="section-number">01 /</span> Emergency response coordination</p>
-              <h1>
-                {nav === "Overview"
-                  ? <>NEED MEETS<br /><span className="heading-accent">ACTION.</span></>
-                  : nav === "Requests"
-                    ? <>EVERY REQUEST.<br /><span className="heading-accent">A NEXT STEP.</span></>
-                    : <>LOCAL SUPPORT.<br /><span className="heading-accent">READY TO GO.</span></>}
-              </h1>
-              <p className="subtitle">
-                A shared desk for urgent needs and available help.<br />
-                Log it. Match it. Follow it through.
-              </p>
+              <h1>{nav === "Overview" ? "Community request directory" : nav}</h1>
+              <p className="directory-intro">Find local assistance requests, check their status and register available resources.</p>
             </div>
             <div className="actions">
-              <span className="action-caption">MAKE THE NEXT CONNECTION</span>
               <button
                 className="primary"
                 onClick={() => openForm("request")}
@@ -445,45 +425,35 @@ export default function App() {
                 Add resource
               </button>
             </div>
+            {nav === "Overview" && (
+              <figure className="directory-photo">
+                <img src="/community-supplies.webp" width="960" height="638" alt="Volunteers loading relief supplies in Yazoo City, Mississippi" />
+                <figcaption>Yazoo City, 2010. George Armstrong / FEMA</figcaption>
+              </figure>
+            )}
           </div>
           {!form && !selected && <Feedback />}
-          <section className="intro-banner">
-            <div>
-              <h2><span className="signal-mark" aria-hidden="true">↗</span> Response starts here.</h2>
-              <p>
-                New requests connect to the nearest available, same-type resource by straight-line geographic distance.
-                <span className="matching-limit" aria-label="Matching distance limit">{maxDistance === null ? "Matching limit unavailable" : `${kilometers(maxDistance)} maximum`}</span>
-              </p>
-            </div>
-            <div className="banner-icon">
-              <HeartHandshake size={31} strokeWidth={1.5} />
-            </div>
-          </section>
           <section className="metrics" aria-label="Response overview">
             {[
               {
                 label: "Total requests",
                 value: requests?.length,
                 icon: ClipboardList,
-                note: "RECORDED IN THE LEDGER",
               },
               {
                 label: "Pending requests",
                 value: pending,
                 icon: Clock3,
-                note: "AWAITING A RESOURCE",
               },
               {
                 label: "Available resources",
                 value: available,
                 icon: Package,
-                note: "READY FOR DISPATCH",
               },
               {
                 label: "Completed requests",
                 value: completed,
                 icon: CheckCircle2,
-                note: "ASSISTANCE DELIVERED",
               },
             ].map((metric) => (
               <div
@@ -498,16 +468,44 @@ export default function App() {
                   </span>
                 </div>
                 <strong>{count(metric.value)}</strong>
-                <small>{metric.note}</small>
               </div>
             ))}
           </section>
           <div className="content-grid">
             <section className="panel">
+              <form
+                  className="lookup"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void action(async () =>
+                      setSelected(
+                        await api<RequestRecord>(
+                          `/requests/${encodeURIComponent(lookup.trim())}`,
+                        ),
+                      ),
+                    );
+                  }}
+                >
+                  <label>
+                    Request ID
+                    <input
+                      required
+                      value={lookup}
+                      onChange={(e) => setLookup(e.target.value)}
+                      placeholder="Enter a request ID"
+                    />
+                  </label>
+                  <button
+                    className="secondary"
+                    disabled={busy || !lookup.trim()}
+                  >
+                    Look up request
+                    <ArrowRight size={13} />
+                  </button>
+                </form>
               <div className="panel-header">
                 <div>
-                  <h2><span className="section-number">02 /</span> The response ledger</h2>
-                  <p>Requests in. Resources out. Keep every connection accounted for.</p>
+                  <h2>Directory</h2>
                 </div>
                 <button
                   className="refresh"
@@ -552,8 +550,8 @@ export default function App() {
                     <h3>No {tab} yet</h3>
                     <p>
                       {tab === "requests"
-                        ? "When someone needs a hand, this is where their request begins."
-                        : "Make local support visible. Register your first resource to get started."}
+                        ? "New requests will appear here once submitted."
+                        : "Registered resources will appear here."}
                     </p>
                     <button
                       className="quiet"
@@ -697,49 +695,14 @@ export default function App() {
             </section>
             <div className="right-column">
               <section className="panel side-content">
-                <Search
-                  size={19}
-                  color="currentColor"
-                  style={{ marginBottom: 13 }}
-                />
-                <h3>Trace a request.</h3>
-                <p>
-                  Enter an ID to inspect its status, assigned resource, and next action.
-                </p>
-                <form
-                  className="lookup"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void action(async () =>
-                      setSelected(
-                        await api<RequestRecord>(
-                          `/requests/${encodeURIComponent(lookup.trim())}`,
-                        ),
-                      ),
-                    );
-                  }}
-                >
-                  <label>
-                    Request ID
-                    <input
-                      required
-                      value={lookup}
-                      onChange={(e) => setLookup(e.target.value)}
-                      placeholder="Enter a request ID"
-                    />
-                  </label>
-                  <button
-                    className="secondary"
-                    disabled={busy || !lookup.trim()}
-                  >
-                    Look up request
-                    <ArrowRight size={13} />
-                  </button>
-                </form>
+                <h3>Matching area</h3>
+                <p>Requests match with the nearest available resource of the same type by straight-line distance.</p>
+                <strong className="matching-limit" aria-label="Matching distance limit">
+                  {maxDistance === null ? "Matching limit unavailable" : `${kilometers(maxDistance)} maximum`}
+                </strong>
               </section>
-              <section className="panel guide">
-                <p className="protocol-label">FIELD NOTES / THE WORKFLOW</p>
-                <h3>Nothing falls<br />through the gaps.</h3>
+              <section className="panel side-content workflow">
+                <h3>How matching works</h3>
                 {[
                   {
                     title: "Capture the need",
@@ -767,7 +730,7 @@ export default function App() {
           </div>
           </>}
           <footer>
-            <span>RELAY / COMMUNITY RESPONSE INFRASTRUCTURE</span>
+            <span>Relay</span>
             <span>
               {updated
                 ? `Last updated ${updated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
