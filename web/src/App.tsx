@@ -16,7 +16,6 @@ import {
   ArrowUpRight,
   Box,
   CheckCircle2,
-  ChevronRight,
   CircleHelp,
   ClipboardList,
   Clock3,
@@ -346,8 +345,17 @@ export default function App() {
           <span className="brand-icon">
             <Activity size={24} strokeWidth={2.5} />
           </span>
-          Relay
+          <strong>Relay</strong>
+          <span className="service-name">Emergency response coordination</span>
         </div>
+        <div className="connection"><span className={`health ${health === "offline" ? "offline" : ""}`}>
+              <span className="dot" />
+              {health === "ready"
+                ? "Service connected"
+                : health === "checking"
+                  ? "Checking service…"
+                  : "Service unavailable"}
+            </span></div>
         <nav aria-label="Main navigation">
           {[
             { name: "Overview", icon: LayoutDashboard },
@@ -376,23 +384,7 @@ export default function App() {
         </nav>
       </header>
       <div className="shell">
-        <header className="topbar">
-          <div className="breadcrumb">
-            <span>Operations desk</span>
-            <ChevronRight size={12} />
-            <strong>{nav}</strong>
-          </div>
-          <div className="topbar-right">
-            <span className={`health ${health === "offline" ? "offline" : ""}`}>
-              <span className="dot" />
-              {health === "ready"
-                ? "Service connected"
-                : health === "checking"
-                  ? "Checking service…"
-                  : "Service unavailable"}
-            </span>
-          </div>
-        </header>
+
         <main>
           {nav === "Map" ? (
             <OverviewMap
@@ -404,7 +396,7 @@ export default function App() {
               onRefresh={refreshData}
             />
           ) : <>
-          <div className={nav === "Overview" ? "page-heading directory-heading" : "page-heading"}>
+          <div className="page-heading">
             <div>
               <h1>{nav === "Overview" ? "Community request directory" : nav}</h1>
               <p className="directory-intro">Find local assistance requests, check their status and register available resources.</p>
@@ -425,12 +417,6 @@ export default function App() {
                 Add resource
               </button>
             </div>
-            {nav === "Overview" && (
-              <figure className="directory-photo">
-                <img src="/community-supplies.webp" width="960" height="638" alt="Volunteers loading relief supplies in Yazoo City, Mississippi" />
-                <figcaption>Yazoo City, 2010. George Armstrong / FEMA</figcaption>
-              </figure>
-            )}
           </div>
           {!form && !selected && <Feedback />}
           <section className="metrics" aria-label="Response overview">
@@ -473,39 +459,10 @@ export default function App() {
           </section>
           <div className="content-grid">
             <section className="panel">
-              <form
-                  className="lookup"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void action(async () =>
-                      setSelected(
-                        await api<RequestRecord>(
-                          `/requests/${encodeURIComponent(lookup.trim())}`,
-                        ),
-                      ),
-                    );
-                  }}
-                >
-                  <label>
-                    Request ID
-                    <input
-                      required
-                      value={lookup}
-                      onChange={(e) => setLookup(e.target.value)}
-                      placeholder="Enter a request ID"
-                    />
-                  </label>
-                  <button
-                    className="secondary"
-                    disabled={busy || !lookup.trim()}
-                  >
-                    Look up request
-                    <ArrowRight size={13} />
-                  </button>
-                </form>
+
               <div className="panel-header">
                 <div>
-                  <h2>Directory</h2>
+                  <h2>Local activity</h2>
                 </div>
                 <button
                   className="refresh"
@@ -693,7 +650,40 @@ export default function App() {
                 <span>{tab === "shard details" ? "Refresh to update topology" : "Updates every 15 seconds"}</span>
               </div>
             </section>
-            <div className="right-column">
+            <aside className="right-column" aria-label="Request services">
+              <section className="lookup-section">
+                <h2>Track a request</h2>
+              <form
+                  className="lookup"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void action(async () =>
+                      setSelected(
+                        await api<RequestRecord>(
+                          `/requests/${encodeURIComponent(lookup.trim())}`,
+                        ),
+                      ),
+                    );
+                  }}
+                >
+                  <label>
+                    Request ID
+                    <input
+                      required
+                      value={lookup}
+                      onChange={(e) => setLookup(e.target.value)}
+                      placeholder="Enter a request ID"
+                    />
+                  </label>
+                  <button
+                    className="secondary"
+                    disabled={busy || !lookup.trim()}
+                  >
+                    Look up request
+                    <ArrowRight size={13} />
+                  </button>
+                </form>
+              </section>
               <section className="panel side-content">
                 <h3>Matching area</h3>
                 <p>Requests match with the nearest available resource of the same type by straight-line distance.</p>
@@ -705,15 +695,15 @@ export default function App() {
                 <h3>How matching works</h3>
                 {[
                   {
-                    title: "Capture the need",
+                    title: "Submit a request",
                     text: "Choose the assistance type and pin the location.",
                   },
                   {
-                    title: "Connect the right help",
+                    title: "Match a resource",
                     text: `The nearest same-type resource by straight-line distance. ${limitDescription}`,
                   },
                   {
-                    title: "Close the loop",
+                    title: "Confirm delivery",
                     text: "Mark completed when assistance is delivered.",
                   },
                 ].map((step, index) => (
@@ -726,7 +716,7 @@ export default function App() {
                   </div>
                 ))}
               </section>
-            </div>
+            </aside>
           </div>
           </>}
           <footer>
