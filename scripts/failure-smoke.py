@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Demonstrate storage failover and recovery on the local Compose demonstration stack.
+"""Verify distribution, failover, and recovery in the local Compose stack.
 
-Tests a primary outage and recovery, then verifies a shard with both copies
-unavailable does not interrupt reads from healthy shards. Requires Docker and a
-running stack. Never removes persistent volumes.
+Run all checks with no --scenario, as CI does, or select one demonstration.
+Stopped storage services are restarted even when an assertion fails.
 """
 import argparse
 import json
@@ -14,17 +13,47 @@ import urllib.request
 import uuid
 
 
+def shard_for(key):
+    """The same three-way FNV-1a partition used by the coordinator."""
+    value = 2166136261
+    for byte in key.encode():
+        value = ((value ^ byte) * 16777619) & 0xFFFFFFFF
+    return value % 3
+
+
+def wait(check, label):
+    deadline = time.monotonic() + 120
+    while time.monotonic() < deadline:
+        try:
+            if check():
+                return
+        except (OSError, subprocess.SubprocessError):
+            pass
+        time.sleep(1)
+    raise AssertionError(f'{label} timed out')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--env-file', required=True)
     parser.add_argument('--url', default='http://127.0.0.1:18081')
+    parser.add_argument('--scenario', choices=['all', 'distribution', 'failover', 'recovery', 'outage'],
+                        default='all')
+    parser.add_argument('--pause', action='store_true', help='pause to inspect an outage before restarting nodes')
     args = parser.parse_args()
     compose = ['docker', 'compose', '--env-file', args.env_file]
+    primary, replica = 'shard-0-primary', 'shard-0-replica'
+
     def command(*parts):
-        return subprocess.check_output(compose + list(parts), text=True, timeout=90)
+        return subprocess.check_output([*compose, *parts], text=True, timeout=90)
+
     def call(method, path, body=None, expected=200):
-        req = urllib.request.Request(args.url.rstrip('/')+path, method=method,
-            data=None if body is None else json.dumps(body).encode(), headers={'Content-Type':'application/json'})
+        req = urllib.request.Request(
+            args.url.rstrip('/') + path,
+            method=method,
+            data=None if body is None else json.dumps(body).encode(),
+            headers={'Content-Type': 'application/json'},
+        )
         try:
             response = urllib.request.urlopen(req, timeout=40)
         except urllib.error.HTTPError as error:
@@ -34,84 +63,111 @@ def main():
         with response:
             assert response.status == expected, f'{method} {path}: HTTP {response.status}, expected {expected}'
             return json.load(response)
-    def wait(check, label):
-        deadline=time.monotonic()+120
-        while time.monotonic()<deadline:
-            try:
-                if check(): return
-            except (OSError, subprocess.SubprocessError): pass
-            time.sleep(1)
-        raise AssertionError(label+' timed out')
+
     def records(service):
-        # Expansion happens inside the container; credentials never leave it.
-        raw=command('exec','-T',service,'sh','-c',
-            'wget -qO- --header="Authorization: Bearer $INTERNAL_TOKEN" http://127.0.0.1:9100/internal/records')
-        return {r['key']:r for r in json.loads(raw)}
-    def shard(key):
-        value=2166136261
-        for byte in key.encode(): value=((value^byte)*16777619)&0xffffffff
-        return value%3
-    marker='failure-'+uuid.uuid4().hex[:12]
-    coordinates={'latitude':1.3521,'longitude':103.8198}
-    created=[]
-    covered=set()
+        # Expand the credentials inside the container.
+        raw = command('exec', '-T', service, 'sh', '-c',
+                      'wget -qO- --header="Authorization: Bearer $INTERNAL_TOKEN" http://127.0.0.1:9100/internal/records')
+        return {record['key']: record for record in json.loads(raw)}
+
+    def shard_zero_nodes():
+        return call('GET', '/development/shards')['shards'][0]['nodes']
+
+    def result(**evidence):
+        print(json.dumps({'result': 'PASS', 'scenario': args.scenario, 'location': marker, **evidence},
+                         indent=2), flush=True)
+
+    marker = 'failure-' + uuid.uuid4().hex[:12]
+    # Use a unique district fixture so existing pinned resources cannot claim these requests.
+    created = {}
     for _ in range(60):
-        request=call('POST','/requests',{'type':'water','location':marker,
-            'coordinates':coordinates,'details':'Storage failover demonstration'}, expected=201)
-        created.append(request);covered.add(shard('request/'+request['id']))
-        if len(covered)==3:break
-    assert covered=={0,1,2},'all shards must receive demonstration records'
-    for index in range(3):
-        for role in ['primary','replica']:
-            stored=records(f'shard-{index}-{role}')
-            for request in created:
-                key='request/'+request['id']
-                assert (key in stored)==(shard(key)==index), 'incorrect shard placement'
-    target=next(r for r in created if shard('request/'+r['id'])==0)
-    key='request/'+target['id']
-    before=records('shard-0-primary')[key]
-    stopped=False
-    try:
-        stopped=True
-        command('stop','shard-0-primary')
-        wait(lambda:not call('GET','/development/shards')['shards'][0]['nodes'][0]['ready'],'failed node detection')
-        assert call('GET','/requests/'+target['id'])['id']==target['id']
-        changed=call('PUT','/requests/'+target['id']+'/status',{'status':'cancelled'})
-        assert changed['status']=='cancelled'
-        replica=records('shard-0-replica')[key]
-        assert replica['version']>before['version']
-        print('PASS: three-shard distribution, failed-node detection, replica read and write during outage',flush=True)
-    finally:
-        if stopped: command('start','shard-0-primary')
-    wait(lambda:call('GET','/development/shards')['shards'][0]['nodes'][0]['ready'],'node recovery')
-    wait(lambda:records('shard-0-primary').get(key)==records('shard-0-replica').get(key),'replica synchronization')
-    assert call('GET','/requests/'+target['id'])['status']=='cancelled'
-    synchronized = records('shard-0-primary')[key]
+        request = call('POST', '/requests', {
+            'type': 'water', 'location': marker, 'details': 'Storage demonstration',
+        }, expected=201)
+        key = 'request/' + request['id']
+        created[key] = shard_for(key)
+        if set(created.values()) == {0, 1, 2}:
+            break
+    assert set(created.values()) == {0, 1, 2}, 'all shards must receive demonstration records'
 
-    healthy = [r for r in created if shard('request/'+r['id']) != 0]
-    offline = ('shard-0-primary', 'shard-0-replica')
+    if args.scenario in ('all', 'distribution'):
+        for index in range(3):
+            for role in ('primary', 'replica'):
+                stored = records(f'shard-{index}-{role}')
+                for key, assigned in created.items():
+                    assert (key in stored) == (assigned == index), f'incorrect placement for {key}'
+        print('PASS: each request is present on both copies of its assigned shard only', flush=True)
+        for key, index in created.items():
+            print(f'{key} -> shard {index} primary and replica', flush=True)
+        if args.scenario == 'distribution':
+            result(shards=sorted(set(created.values())), placements=created)
+            return
+
+    key = next(key for key, index in created.items() if index == 0)
+    request_id = key.split('/', 1)[1]
+    target_url = '/requests/' + request_id
+    before = records(primary)[key]
+    synchronized = before
+
+    if args.scenario != 'outage':
+        try:
+            command('stop', primary)
+            wait(lambda: not shard_zero_nodes()[0]['ready'], 'failed node detection')
+            assert call('GET', target_url)['id'] == request_id
+            changed = call('PUT', target_url + '/status', {'status': 'cancelled'})
+            assert changed['status'] == 'cancelled'
+            written_on_replica = records(replica)[key]
+            assert written_on_replica['version'] > before['version']
+            print(f"PASS: replica served a read and advanced {request_id} from version "
+                  f"{before['version']} to {written_on_replica['version']} with the primary down", flush=True)
+            if args.pause:
+                input('Refresh Shard details in the dashboard. Press Enter to restore the primary. ')
+        finally:
+            print(f'Restarting {primary}', flush=True)
+            command('start', primary)
+        wait(lambda: all(node['ready'] for node in shard_zero_nodes()), 'primary recovery')
+
+        if args.scenario == 'failover':
+            result(request_id=request_id, version_before=before['version'],
+                   version_on_replica=written_on_replica['version'])
+            return
+
+        wait(lambda: records(primary).get(key) == records(replica).get(key) == written_on_replica,
+             'replica synchronization')
+        assert call('GET', target_url)['status'] == 'cancelled'
+        synchronized = records(primary)[key]
+        print(f"PASS: the recovered primary and replica both contain version {synchronized['version']}",
+              flush=True)
+        if args.scenario == 'recovery':
+            result(request_id=request_id, version_before=before['version'], version_after=synchronized['version'])
+            return
+
+    healthy_keys = [key for key, index in created.items() if index != 0]
     try:
-        command('stop', *offline)
-        wait(lambda: not any(node['ready'] for node in
-            call('GET', '/development/shards')['shards'][0]['nodes']), 'both copies unavailable')
-        unavailable = call('GET', '/requests/'+target['id'], expected=503)
+        command('stop', primary, replica)
+        wait(lambda: not any(node['ready'] for node in shard_zero_nodes()), 'both copies unavailable')
+        unavailable = call('GET', target_url, expected=503)
         assert unavailable.get('error'), 'an unavailable record must return a JSON error'
-        for request in healthy:
-            persisted = call('GET', '/requests/'+request['id'])
-            assert persisted['id'] == request['id'], 'healthy shard read failed'
-        print('PASS: losing both copies returns HTTP 503 only for reads of the affected shard', flush=True)
+        print(f'Shard 0 request {request_id} returned HTTP 503.', flush=True)
+        for healthy_key in healthy_keys:
+            healthy_id = healthy_key.split('/', 1)[1]
+            persisted = call('GET', '/requests/' + healthy_id)
+            assert persisted['id'] == healthy_id, 'healthy shard read failed'
+            print(f'Shard {created[healthy_key]} request {healthy_id} returned HTTP 200.', flush=True)
+        if args.pause:
+            input('Inspect the unavailable shard. Press Enter to restore both copies. ')
     finally:
-        command('start', *offline)
-    wait(lambda: all(node['ready'] for node in
-        call('GET', '/development/shards')['shards'][0]['nodes']), 'both copies recovered')
-    for service in offline:
-        assert records(service)[key] == synchronized, f'{service} lost the last synchronized record'
-    assert call('GET','/requests/'+target['id'])['status']=='cancelled'
-    print(json.dumps({'result':'PASS','location':marker,'request_id':target['id'],
-        'shards':sorted(covered),'version_before':before['version'],
-        'version_after':records('shard-0-primary')[key]['version'],
-        'checks':['before/during/after storage failure','replica availability','recovery synchronization',
-                  'total shard outage isolation', 'persistent data after restoring both copies']},indent=2))
+        print(f'Restarting {primary} and {replica}', flush=True)
+        command('start', primary, replica)
+    wait(lambda: all(node['ready'] for node in shard_zero_nodes()), 'both copies recovered')
+    for service in (primary, replica):
+        assert records(service)[key] == synchronized, f'{service} lost the last committed record'
+    assert call('GET', target_url)['id'] == request_id
+    if args.scenario == 'all':
+        assert call('GET', target_url)['status'] == 'cancelled'
+    result(request_id=request_id, shards=sorted(set(created.values())), version_before=before['version'],
+           version_after=synchronized['version'], affected_shard_http=503, healthy_shards_http=200)
 
 
-if __name__=='__main__': main()
+if __name__ == '__main__':
+    main()

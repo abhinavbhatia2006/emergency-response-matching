@@ -19,6 +19,8 @@ def main():
     parser.add_argument('--url', default='http://127.0.0.1:8080')
     parser.add_argument('--timeout', type=float, default=120)
     parser.add_argument('--count', type=int, default=6)
+    parser.add_argument('--concurrency-only', action='store_true',
+                        help='end after the concurrent asynchronous matching checks')
     args = parser.parse_args()
     if args.count < 1 or args.count > 20 or args.timeout <= 0:
         parser.error('count must be 1-20 and timeout must be positive')
@@ -85,7 +87,12 @@ def main():
     assert len(set(ids)) == args.count, 'resource assigned more than once'
     assert set(ids) == {r['id'] for r in resources}
     assert all(r['distance_meters'] == 0 for r in matched), 'expected zero distance at shared coordinates'
-    print(f'PASS: {args.count} concurrent requests matched asynchronously without double booking', flush=True)
+    print(f'PASS: {args.count} requests matched asynchronously without double booking '
+          f'(up to {min(args.count, 6)} submissions in flight)', flush=True)
+    evidence = {'url': base, 'location': area, 'request_ids': [r['id'] for r in requests], 'resource_ids': ids}
+    if args.concurrency_only:
+        print(json.dumps(evidence, indent=2), flush=True)
+        return
 
     first = matched[0]
     duplicate = call('POST', '/match/' + first['id'])
@@ -96,6 +103,9 @@ def main():
     listed = call('GET', '/resources')
     used = next(r for r in listed if r['id'] == first['resource_id'])
     assert used['status'] == 'unavailable' and not used['availability']
+    evidence['completed_request'] = completed['id']
+    evidence['completed_request_status'] = completed['status']
+    evidence['assigned_resource_status'] = used['status']
     pending = call('POST', '/requests', {
         'type': 'medicine', 'location': area, 'coordinates': coordinates, 'details': 'No matching resource'}, 201)
     call('POST', '/match/' + pending['id'], expected=409)
@@ -106,6 +116,12 @@ def main():
     district = area + '-legacy'
     legacy_resource = call('POST', '/resources', {
         'type': 'water', 'location': district, 'availability': True}, 201)
+    legacy_status_url = '/resources/' + legacy_resource['id'] + '/status'
+    disabled = call('PUT', legacy_status_url, {'status': 'unavailable'})
+    assert disabled['status'] == 'unavailable' and not disabled['availability']
+    enabled = call('PUT', legacy_status_url, {'status': 'available'})
+    assert enabled['status'] == 'available' and enabled['availability']
+    print('PASS: an unassigned resource can be made unavailable and available again', flush=True)
     legacy_request = call('POST', '/requests', {
         'type': 'water', 'location': district, 'details': 'Existing district API contract'}, 201)
     wait(lambda: call('GET', '/requests/' + legacy_request['id'])['status'] == 'matched',
@@ -116,8 +132,7 @@ def main():
     call('PUT', '/requests/' + legacy_request['id'] + '/status', {'status': 'completed'})
     call('GET', '/requests/' + '0' * 32, expected=404)
     print('PASS: idempotent match, lifecycle, resource reservation, and error contracts', flush=True)
-    print(json.dumps({'url': base, 'location': area, 'request_ids': [r['id'] for r in requests],
-                      'resource_ids': ids}, indent=2), flush=True)
+    print(json.dumps(evidence, indent=2), flush=True)
 
 
 if __name__ == '__main__':
