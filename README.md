@@ -1,63 +1,130 @@
 # Sahara
 
-A Go system connecting emergency requests with available resources by type and location.
+Sahara is a cloud computing coursework project that matches emergency assistance requests with available resources. The React dashboard lets you register resources, submit and track requests, and view locations on a map. The Go backend processes matches asynchronously through RabbitMQ and stores records across three replicated PostgreSQL-backed shards.
 
-## Development status
+## What you can do
 
-Domain models, validation, request lifecycle rules and deterministic resource selection are implemented. The storage cluster provides a coordinator, three replicated shards, heartbeat leases, failover and restart synchronization. The public request/resource API, atomic matching, RabbitMQ outbox workflow and React dashboard run in Docker Compose and Kubernetes. Full deployment failure and scaling demonstrations are the next stage.
+- Request or offer food, water, medicine, transportation, or shelter.
+- Pin a request or resource on the map. Sahara picks the nearest available resource of the same type within a configurable straight-line radius of 50 km by default.
+- Follow a request from pending to matched and completed, or cancel it. The backend commits the assignment and resource reservation together to prevent double booking.
+- Open **Shard details** to inspect record counts, node readiness, and heartbeats. The demonstration scripts exercise replica failover, recovery, and Kubernetes scaling.
+
+## Requirements
+
+| Task | Install locally |
+| --- | --- |
+| Run with Docker Compose | Git, Docker Engine with Compose v2, and a browser. On Windows, start Docker Desktop in Linux container mode. [Docker Desktop for Windows](https://docs.docker.com/desktop/setup/install/windows-install/) |
+| Run the numbered Windows scripts | PowerShell and Python 3 for the smoke tests and first-time credential setup. The scripts accept `python` or `py -3`. |
+| Run the Kubernetes demonstration | Docker, `kind`, and `kubectl`. The manifests use eight 1 GiB persistent volume claims and a default StorageClass. [kind Quick Start](https://kind.sigs.k8s.io/docs/user/quick-start/) |
+| Run source-level checks | Go 1.25 or newer for the backend. Node.js 22.12 or newer and npm for the frontend. [Vite requirements](https://vite.dev/guide/) |
+
+Docker builds the Go and React components and starts PostgreSQL 17 and RabbitMQ 4 as containers. The first build needs internet access to download base images and package dependencies.
+
+## Run locally with Docker Compose
+
+### 1. Clone the repository
+
+```sh
+git clone https://github.com/abhinavbhatia2006/emergency-response-matching.git
+cd emergency-response-matching
+```
+
+### 2. Build and start the application
+
+**Windows PowerShell.** Run the setup script from the repository root.
+
+```powershell
+.\scripts\01-setup-docker.ps1
+```
+
+On a fresh checkout the script generates credentials in `.env` and sets the host port to `18080`. It reuses an existing `.env`, builds the images, waits for the stack to become healthy, and prints the dashboard URL.
+
+**Manual setup.** In a Bash-compatible shell, create the local configuration if it does not already exist.
+
+```sh
+test -f .env || cp .env.example .env
+```
+
+On a fresh setup, edit `.env` and set distinct random alphanumeric values for `INTERNAL_TOKEN`, `POSTGRES_PASSWORD`, and `RABBITMQ_PASSWORD`. To generate one value at a time, run `python3 -c 'import secrets; print(secrets.token_hex(32))'`. Keep `.env` private and reuse its credentials with existing data volumes. Then start the stack.
+
+```sh
+docker compose config --quiet
+docker compose up -d --build --wait --wait-timeout 300
+docker compose ps
+```
+
+### 3. Open the dashboard and verify startup
+
+```sh
+docker compose port request-api 8080
+```
+
+Open the address printed by that command in your browser. A fresh PowerShell setup uses [http://127.0.0.1:18080](http://127.0.0.1:18080). The manual setup uses [http://127.0.0.1:8080](http://127.0.0.1:8080) unless you set a different `APP_PORT`. Add `/readyz` to the address to check for `{"status":"ready"}`.
+
+For a quick walkthrough, use **Add resource** to register an available shelter resource. Use **New request** to request shelter and place its pin near the resource. Refresh the request list to see the worker's assignment and the distance. Open **Map** to see the pins or **Shard details** to see the storage nodes.
+
+### Configuration and shutdown
+
+| Setting | Purpose |
+| --- | --- |
+| `APP_PORT` | Host port for the Docker Compose dashboard. The API listens on port `8080` inside the container. |
+| `MAX_MATCH_DISTANCE_METERS` | Maximum matching distance in Compose. Defaults to `50000` metres. See the [geographic matching guide](docs/geographic-matching.md) for the Kubernetes setting. |
+| `INTERNAL_TOKEN`, `POSTGRES_PASSWORD`, `RABBITMQ_PASSWORD` | Required credentials for service communication, PostgreSQL, and RabbitMQ. |
+
+Run `docker compose stop` to stop the containers and keep the data. Resume with `docker compose start --wait --wait-timeout 300`. If startup fails, run `docker compose ps` and `docker compose logs --tail 100 coordinator request-api matching-worker`. [Docker Compose guide](docs/docker.md)
+
+## Run on Kubernetes
+
+After the Docker setup above has built the images, run the following from the repository root in Windows PowerShell. The setup script creates or reuses a local `kind` cluster named `sahara-demo`, loads the images, deploys to the `response-matching` namespace, and waits for the workloads and persistent volume claims.
+
+```powershell
+.\scripts\11-setup-kubernetes.ps1
+```
+
+In a second PowerShell window at the repository root, keep the port-forward running.
+
+```powershell
+.\scripts\12-forward-kubernetes.ps1
+```
+
+Open [the Kubernetes dashboard](http://127.0.0.1:18082). Run `.\scripts\13-test-kubernetes-baseline.ps1` in the first window to verify readiness and a deployed matching workflow. For direct `kind` and `kubectl` commands in Bash or PowerShell, see the [Kubernetes deployment guide](docs/kubernetes.md).
 
 ## Architecture
 
-The runtime has a request API with a React browser frontend, a matching worker, RabbitMQ, a storage coordinator, and three storage shards with one replica each. Clients use REST/JSON without knowing which shard owns their data. Each storage process has its own persistent PostgreSQL database. Complete deployment configurations include seven database instances and a durable message broker.
-
-## Run the complete application
-
-Follow the [Docker Compose guide](docs/docker.md) to build and start the application locally, or the [Kubernetes guide](docs/kubernetes.md) to deploy it to a cluster. Both guides include private credential setup, persistent storage, health checks and an end-to-end smoke command. Only the API/frontend needs to be reachable by clients.
-
-Supported assistance types are food, water, medicine, transportation and shelter. The dashboard requires latitude and longitude for new records. Coordinate-based matching selects the nearest available resource of the same type within a configurable straight-line geographic radius (50 km by default), with resource ID as a deterministic tie-breaker. For pinned records, the location name is an optional display label. The API also supports district-only requests and resources for existing clients. See the [geographic matching guide](docs/geographic-matching.md).
-
-Requests progress from `pending` to `matched` to `completed`. Pending or matched requests may be cancelled. A matching operation must assign a resource before entering `matched`. Selection alone does not reserve a resource: the service layer must atomically coordinate assignment and availability.
-
-## Checks
-
-Install Go 1.25 or newer, PostgreSQL 17, RabbitMQ 4 and Node.js 22.12+. Set `TEST_RABBITMQ_URL` for real broker tests. Set `TEST_DATABASE_URL` to a disposable test database whose user can create schemas, then run:
-
-```sh
-go test ./...
-go test -race ./...
-go vet ./...
+```mermaid
+flowchart TD
+    Browser["React dashboard"] --> API["Go request API"]
+    API --> Coordinator["Storage coordinator"]
+    Worker["Go matching worker"] <--> Broker["RabbitMQ"]
+    Worker --> Coordinator
+    Coordinator --> Shards["Three storage shards"]
 ```
 
-The race detector requires a supported C compiler. CI provisions PostgreSQL 17 and RabbitMQ 4 and runs formatting, vet and race-enabled tests on Linux. Database tests explicitly skip without `TEST_DATABASE_URL`; a full verification requires it. Tests isolate each store in a fresh schema, then drop it during cleanup. Sharing one test server does not provide independent failure domains.
+The API stores each new request and an outbox job together. The matching worker publishes the job to RabbitMQ, consumes it, and attempts an assignment. The coordinator uses a PostgreSQL journal to commit versioned updates and replicate them to the affected shards. Each shard has a primary and replica, each backed by its own PostgreSQL database. Docker Compose and Kubernetes run the same application components.
 
-## Layout
+## Tests and demonstration
 
-- `internal/domain`: request/resource models and matching rules.
-- `internal/storage`: PostgreSQL-backed versioned records, transactional replacement and shard hashing.
-- `internal/coordinator`: routing, recovery journal, replication and node leases.
-- `internal/node`: authenticated storage-node HTTP and heartbeat client.
-- `internal/integration`: six-node failure and recovery tests.
-- `cmd/coordinator`, `cmd/storage-node`: runnable storage services.
-- `config/nodes.local.json`: six-node local topology.
-- `.github/workflows`: continuous integration.
+| Check | What it covers |
+| --- | --- |
+| [Go checks](.github/workflows/test.yml) | Validation, matching logic, concurrent reservation, storage, and messaging. Run `go vet ./...` and `go test ./...` locally. CI supplies PostgreSQL and RabbitMQ for tests that use `TEST_DATABASE_URL` and `TEST_RABBITMQ_URL`. |
+| [Frontend checks](.github/workflows/frontend.yml) | Dashboard behavior with Vitest and a production build. Run `npm ci`, `npm test`, and `npm run build` from `web/`. |
+| [Deployment checks](.github/workflows/deployment.yml) | End-to-end matching in Docker Compose, geographic selection, shard placement, failover, recovery, and Kubernetes scaling and Pod replacement. |
 
-## Storage cluster
+For the numbered PowerShell commands, expected results, and what to show during the presentation, follow the [testing and demonstration walkthrough](scripts/TESTING-GUIDE.md).
 
-Build the services:
+## Repository layout
 
-```sh
-go build -o bin/coordinator ./cmd/coordinator
-go build -o bin/storage-node ./cmd/storage-node
-```
+| Path | Contents |
+| --- | --- |
+| [`cmd/`](cmd/) | Request API, matching worker, coordinator, and storage-node entry points |
+| [`internal/`](internal/) | Application logic, messaging, coordination, and persistence |
+| [`web/`](web/) | React dashboard and frontend tests |
+| [`deploy/kubernetes/`](deploy/kubernetes/) | Kubernetes manifests |
+| [`scripts/`](scripts/) | Smoke tests, deployment checks, and numbered demonstration scripts |
+| [`docs/`](docs/) | Setup and design documentation, including the [public API reference](docs/application.md) |
 
-Set the same nonempty `INTERNAL_TOKEN` for every process. Start the coordinator with `-nodes config/nodes.local.json`, then start six nodes with the IDs, ports and shard indices in that file. Each process requires its own `DATABASE_URL`; the `-data` flag is removed. Start the seven PostgreSQL instances using the [database setup guide](docs/storage.md). See [coordinator protocol and failure semantics](docs/coordinator.md) and [node startup instructions](docs/node.md).
+Sahara is intended for local coursework demonstrations. It uses a single storage coordinator and a local API without user authentication.
 
-Existing-record reads and writes can continue with one synchronized copy per shard. A coordinator outage pauses service until its journal is reopened and replicas register again. This is a single-coordinator demonstration, not a consensus database.
+## License
 
-This project is a demonstration system, not an operational emergency dispatch service.
-
-## Application
-
-The dashboard includes a read-only **Shard details** development tab showing live coordinator-reported node readiness and heartbeats. Follow the [demonstration guide](docs/demonstration.md) to verify shard distribution, storage failover, recovery, concurrent matching and Kubernetes scaling.
-
-See the [API and React dashboard guide](docs/application.md) and [matching worker guide](docs/messaging.md) for setup, endpoints, delivery guarantees and capacity limits. The API serves compiled frontend assets from `web/dist`; build them with `npm ci && npm run build` inside `web`. The worker requires `RABBITMQ_URL`.
+[MIT](LICENSE)
