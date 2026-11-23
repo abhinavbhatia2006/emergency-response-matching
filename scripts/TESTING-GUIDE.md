@@ -94,7 +94,7 @@ docker compose up -d --no-build --wait --wait-timeout 300
 
 ## 11–13. Deploy to Kubernetes and exercise the baseline
 
-Run setup in your main window. It creates or reuses the dedicated `sahara-demo` kind cluster, loads the images built in step 01, applies the manifests in `response-matching`, and waits for the controllers and eight Bound claims. Run this before the presentation so the first image pulls and Pod start-up can finish.
+Run setup in your main window. It creates or reuses the dedicated `sahara-demo` kind cluster, loads the images built in step 01, applies the manifests in `response-matching`, and waits for the controllers and eight Bound claims. New clusters use a pinned Kubernetes 1.34 node image that can start on Docker engines using cgroup v1. Run this before the presentation so the first image pulls and Pod start-up can finish.
 
 ```powershell
 .\scripts\11-setup-kubernetes.ps1
