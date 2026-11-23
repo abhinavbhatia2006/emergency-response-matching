@@ -110,8 +110,6 @@ The API stores each new request and an outbox job together. The matching worker 
 | [Frontend checks](.github/workflows/frontend.yml) | Dashboard behavior with Vitest and a production build. Run `npm ci`, `npm test`, and `npm run build` from `web/`. |
 | [Deployment checks](.github/workflows/deployment.yml) | End-to-end matching in Docker Compose, geographic selection, shard placement, failover, recovery, and Kubernetes scaling and Pod replacement. |
 
-For the numbered PowerShell commands, expected results, and what to show during the presentation, follow the [testing and demonstration walkthrough](scripts/TESTING-GUIDE.md).
-
 ## Repository layout
 
 | Path | Contents |
