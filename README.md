@@ -15,7 +15,7 @@ Sahara is a cloud computing coursework project that matches emergency assistance
 | --- | --- |
 | Run with Docker Compose | Git, Docker Engine with Compose v2, and a browser. On Windows, start Docker Desktop in Linux container mode. [Docker Desktop for Windows](https://docs.docker.com/desktop/setup/install/windows-install/) |
 | Run the numbered Windows scripts | PowerShell and Python 3 for the smoke tests and first-time credential setup. The scripts accept `python` or `py -3`. |
-| Run the Kubernetes demonstration | Docker, `kind`, and `kubectl`. The manifests use eight 1 GiB persistent volume claims and a default StorageClass. [kind Quick Start](https://kind.sigs.k8s.io/docs/user/quick-start/) |
+| Run the Kubernetes demonstration | Docker with a Linux engine using cgroup v2, `kind` v0.33.0, and `kubectl` v1.37.x (recommended). See [Kubernetes setup and version checks](#run-on-kubernetes). |
 | Run source-level checks | Go 1.25 or newer for the backend. Node.js 22.12 or newer and npm for the frontend. [Vite requirements](https://vite.dev/guide/) |
 
 Docker builds the Go and React components and starts PostgreSQL 17 and RabbitMQ 4 as containers. The first build needs internet access to download base images and package dependencies.
@@ -73,13 +73,29 @@ For a quick walkthrough, use **Add resource** to register an available shelter r
 
 Run `docker compose stop` to stop the containers and keep the data. Resume with `docker compose start --wait --wait-timeout 300`. If startup fails, run `docker compose ps` and `docker compose logs --tail 100 coordinator request-api matching-worker`. [Docker Compose guide](docs/docker.md)
 
+To remove the deployments and their data, follow [Cleanup and reset](#cleanup-and-reset).
+
 ## Run on Kubernetes
 
-After the Docker setup above has built the images, run the following from the repository root in Windows PowerShell. The setup script requires Docker's Linux engine to use cgroup v2. It creates or reuses a Kubernetes 1.37.0 `kind` cluster named `sahara-demo-v137`, loads the images, deploys to the `response-matching` namespace, and waits for the workloads and persistent volume claims.
+The Windows demo uses **Kubernetes v1.37.0**. The setup script pins the `kindest/node:v1.37.0` image by digest. Use **`kind` v0.33.0** and preferably **`kubectl` v1.37.x**. Kubernetes also supports `kubectl` v1.36.x and v1.38.x against a v1.37 API server. [kind v0.33.0 release](https://github.com/kubernetes-sigs/kind/releases/tag/v0.33.0) · [`kubectl` version compatibility](https://kubernetes.io/releases/version-skew-policy/#kubectl)
+
+Before running the setup, check your versions and Docker engine in PowerShell.
+
+```powershell
+kind version
+kubectl version --client
+docker info --format 'Engine={{.OSType}} cgroup={{.CgroupVersion}}'
+```
+
+Docker should report `Engine=linux cgroup=2`. The manifests use eight 1 GiB persistent volume claims and require a default StorageClass, which the demo cluster provides.
+
+After Docker Compose has built the application images, run the setup from the repository root. It creates or reuses the `sahara-demo-v137` kind cluster, loads the images, deploys to the `response-matching` namespace, and waits for the workloads and persistent volume claims.
 
 ```powershell
 .\scripts\11-setup-kubernetes.ps1
 ```
+
+To confirm the Kubernetes server version, run `kubectl --context kind-sahara-demo-v137 version` and check that `Server Version` shows `v1.37.0`.
 
 In a second PowerShell window at the repository root, keep the port-forward running.
 
@@ -88,6 +104,43 @@ In a second PowerShell window at the repository root, keep the port-forward runn
 ```
 
 Open [the Kubernetes dashboard](http://127.0.0.1:18082). Run `.\scripts\13-test-kubernetes-baseline.ps1` in the first window to verify readiness and a deployed matching workflow. For direct `kind` and `kubectl` commands in Bash or PowerShell, see the [Kubernetes deployment guide](docs/kubernetes.md).
+
+## Cleanup and reset
+
+**This permanently deletes the requests, resources, and queue data in both local deployments.** If the Kubernetes port-forward is running, press `Ctrl+C` in its window. With Docker running, use PowerShell from the repository root.
+
+```powershell
+docker compose -p response-matching down --volumes --remove-orphans
+kind delete cluster --name sahara-demo-v137
+```
+
+Docker Compose removes the Sahara containers, project network, PostgreSQL volumes, and RabbitMQ volume. Deleting the kind cluster removes its workloads and local persistent data. [Docker Compose cleanup](https://docs.docker.com/reference/cli/docker/compose/down/) · [kind cluster deletion](https://kind.sigs.k8s.io/docs/user/quick-start/#deleting-a-cluster)
+
+Verify that the Compose container and volume lists are empty and that `sahara-demo-v137` is gone.
+
+```powershell
+docker compose -p response-matching ps -a
+docker volume ls --filter 'label=com.docker.compose.project=response-matching'
+kind get clusters
+```
+
+If you also ran the standalone PostgreSQL stack from the [storage guide](docs/storage.md), remove it and its data volumes with this command.
+
+```powershell
+docker compose -f compose.postgres.yml -p emergency-postgres down --volumes --remove-orphans
+```
+
+If you still have the earlier `sahara-demo` cluster, remove it with `kind delete cluster --name sahara-demo`.
+
+Run the following command to remove the four locally built Sahara application images.
+
+```powershell
+docker image rm `
+  emergency-response-matching/request-api:local `
+  emergency-response-matching/matching-worker:local `
+  emergency-response-matching/coordinator:local `
+  emergency-response-matching/storage-node:local
+```
 
 ## Architecture
 

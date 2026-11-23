@@ -65,7 +65,7 @@ function Invoke-StorageTest {
     param([string]$Scenario, [switch]$Pause)
     $url = Get-ComposeUrl
     Test-ApiReady $url
-    $testArguments = @('-u', 'scripts/failure-smoke.py', '--env-file', '.env', '--url', $url, '--scenario', $Scenario)
+    $testArguments = @('-u', 'scripts/storage-smoke.py', '--env-file', '.env', '--url', $url, '--scenario', $Scenario)
     if ($Pause) { $testArguments += '--pause' }
     Invoke-Python $testArguments
 }

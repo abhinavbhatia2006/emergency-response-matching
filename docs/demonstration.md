@@ -18,7 +18,7 @@ The first check creates resources and simultaneous requests at the same coordina
 From the repository root, with the Compose environment file available:
 
 ```text
-python scripts/failure-smoke.py --env-file .env --url http://127.0.0.1:18081
+python scripts/storage-smoke.py --env-file .env --url http://127.0.0.1:18081
 ```
 
 The script creates requests until all three FNV-1a partitions are represented. It reads each node through its authenticated internal endpoint and checks that each request exists on exactly its shard's two copies. It then stops shard-0-primary, waits for the coordinator's heartbeat lease to expire, retrieves a request through the replica and updates it during the outage. A finally block restarts the primary. Recovery succeeds only when both copies agree on the newer version and the client reads the updated status. Internal credentials remain inside the container.

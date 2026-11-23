@@ -3,12 +3,15 @@
 
 Invoke-ProjectStep {
     $deployments = @('deployment/request-api', 'deployment/matching-worker')
+    $podSelector = 'app in (request-api,matching-worker)'
     Test-ApiReady $KubernetesUrl
     $beforeJson = Invoke-Checked { kubectl @Kube get @deployments -o json }
     $baseline = @(($beforeJson | ConvertFrom-Json).items | Where-Object {
         $_.spec.replicas -eq 1 -and $_.status.readyReplicas -eq 1
     })
     if ($baseline.Count -ne 2) { throw 'Both Deployments must start with one Ready replica.' }
+    Write-Host 'Pods before scaling (one replica per Deployment):'
+    Invoke-Checked { kubectl @Kube get pods -l $podSelector --sort-by=.metadata.creationTimestamp -o wide }
 
     try {
         Invoke-Checked { kubectl @Kube scale @deployments --replicas=2 }
@@ -32,6 +35,8 @@ Invoke-ProjectStep {
 
         if (-not $scaled) { throw 'Expected two Ready replicas of each Deployment and two Ready API endpoints.' }
         Invoke-Checked { kubectl @Kube get @deployments }
+        Write-Host 'Pods after scaling up (newest at the bottom):'
+        Invoke-Checked { kubectl @Kube get pods -l $podSelector --sort-by=.metadata.creationTimestamp -o wide }
         Invoke-Checked { kubectl @Kube get endpointslice -l kubernetes.io/service-name=request-api -o wide }
         Invoke-Python @('-u', 'scripts/smoke.py', '--url', $KubernetesUrl, '--count', '12', '--timeout', '180')
         Write-Host 'PASS: Two Ready API endpoints and two Ready workers sustained a concurrent matching workload.'
@@ -41,5 +46,7 @@ Invoke-ProjectStep {
         foreach ($deployment in $deployments) {
             Invoke-Checked { kubectl @Kube rollout status $deployment --timeout=120s }
         }
+        Write-Host 'Pods after restoring one replica per Deployment:'
+        Invoke-Checked { kubectl @Kube get pods -l $podSelector --sort-by=.metadata.creationTimestamp -o wide }
     }
 }

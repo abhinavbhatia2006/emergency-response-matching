@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify distribution, failover, and recovery in the local Compose stack.
+"""Verify shard distribution, failover, recovery, and outage in Docker Compose.
 
 Run all checks with no --scenario, as CI does, or select one demonstration.
 Stopped storage services are restarted even when an assertion fails.
@@ -77,7 +77,8 @@ def main():
         print(json.dumps({'result': 'PASS', 'scenario': args.scenario, 'location': marker, **evidence},
                          indent=2), flush=True)
 
-    marker = 'failure-' + uuid.uuid4().hex[:12]
+    scenario_label = 'storage-suite' if args.scenario == 'all' else args.scenario
+    marker = f'{scenario_label}-{uuid.uuid4().hex[:12]}'
     # Use a remote demo pin to keep these requests outside the existing demo resources' matching areas.
     coordinates = {'latitude': 0, 'longitude': -140}
     created = {}
