@@ -270,7 +270,7 @@ func TestCoordinateHTTPInput(t *testing.T) {
 			status      int
 		}{
 			{`{"latitude":0,"longitude":0}`, 201}, {`{"latitude":90,"longitude":-180}`, 201},
-			{"", 201}, {`{"latitude":1}`, 400}, {`{"longitude":1}`, 400}, {`null`, 400},
+			{"", 400}, {`{"latitude":1}`, 400}, {`{"longitude":1}`, 400}, {`null`, 400},
 			{`{"latitude":null,"longitude":1}`, 400}, {`{"latitude":1,"longitude":null}`, 400},
 			{`{"latitude":91,"longitude":0}`, 400}, {`{"latitude":0,"longitude":181}`, 400},
 			{`{"latitude":0,"longitude":0,"extra":1}`, 400},
@@ -299,7 +299,7 @@ func TestCoordinateHTTPInput(t *testing.T) {
 					if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
 						t.Fatal(err)
 					}
-					if (out.Coordinates == nil) != (tc.coordinates == "") || len(*writes) != 2 {
+					if out.Coordinates == nil || len(*writes) != 2 {
 						t.Fatal("unexpected saved coordinates or missing atomic job")
 					}
 				} else if len(*writes) != 0 {

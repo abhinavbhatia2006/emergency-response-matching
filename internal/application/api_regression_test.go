@@ -91,10 +91,10 @@ func TestCompetingTerminalAPIUpdatesKeepResourceConsistent(t *testing.T) {
 	handler := service.Handler()
 	var request domain.Request
 	requireAPIResponse(t, apiResponse(handler, "POST", "/requests",
-		`{"type":"food","location":"district-a","details":"meal"}`), 201, &request)
+		`{"type":"food","location":"district-a","details":"meal","coordinates":{"latitude":0,"longitude":0}}`), 201, &request)
 	var resource domain.Resource
 	requireAPIResponse(t, apiResponse(handler, "POST", "/resources",
-		`{"type":"food","location":"district-a","availability":true}`), 201, &resource)
+		`{"type":"food","location":"district-a","availability":true,"coordinates":{"latitude":0,"longitude":0}}`), 201, &resource)
 	requireAPIResponse(t, apiResponse(handler, "POST", "/match/"+request.ID, ""), 200, &request)
 	if request.Status != domain.Matched || request.ResourceID != resource.ID {
 		t.Fatalf("setup did not match the test resource: %+v", request)

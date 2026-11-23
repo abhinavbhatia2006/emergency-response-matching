@@ -78,11 +78,12 @@ def main():
                          indent=2), flush=True)
 
     marker = 'failure-' + uuid.uuid4().hex[:12]
-    # Use a unique district fixture so existing pinned resources cannot claim these requests.
+    # Use a remote demo pin to keep these requests outside the existing demo resources' matching areas.
+    coordinates = {'latitude': 0, 'longitude': -140}
     created = {}
     for _ in range(60):
         request = call('POST', '/requests', {
-            'type': 'water', 'location': marker, 'details': 'Storage demonstration',
+            'type': 'water', 'location': marker, 'coordinates': coordinates, 'details': 'Storage demonstration',
         }, expected=201)
         key = 'request/' + request['id']
         created[key] = shard_for(key)

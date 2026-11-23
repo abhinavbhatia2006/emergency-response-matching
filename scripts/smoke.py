@@ -113,23 +113,20 @@ def main():
     call('POST', '/resources', {'type': 'food', 'location': area, 'coordinates': coordinates}, 400)
     call('POST', '/requests', {'type': 'food', 'location': area,
                               'coordinates': None, 'details': 'Invalid coordinates'}, 400)
-    district = area + '-legacy'
-    legacy_resource = call('POST', '/resources', {
-        'type': 'water', 'location': district, 'availability': True}, 201)
-    legacy_status_url = '/resources/' + legacy_resource['id'] + '/status'
-    disabled = call('PUT', legacy_status_url, {'status': 'unavailable'})
+    for route, payload in [
+        ('/requests', {'type': 'water', 'location': area, 'details': 'No coordinates'}),
+        ('/resources', {'type': 'water', 'location': area, 'availability': True}),
+    ]:
+        call('POST', route, payload, 400)
+
+    resource = call('POST', '/resources', {
+        'type': 'water', 'location': area, 'coordinates': coordinates, 'availability': True}, 201)
+    status_url = '/resources/' + resource['id'] + '/status'
+    disabled = call('PUT', status_url, {'status': 'unavailable'})
     assert disabled['status'] == 'unavailable' and not disabled['availability']
-    enabled = call('PUT', legacy_status_url, {'status': 'available'})
+    enabled = call('PUT', status_url, {'status': 'available'})
     assert enabled['status'] == 'available' and enabled['availability']
-    print('PASS: an unassigned resource can be made unavailable and available again', flush=True)
-    legacy_request = call('POST', '/requests', {
-        'type': 'water', 'location': district, 'details': 'Existing district API contract'}, 201)
-    wait(lambda: call('GET', '/requests/' + legacy_request['id'])['status'] == 'matched',
-         'legacy district assignment')
-    legacy_match = call('POST', '/match/' + legacy_request['id'])
-    assert legacy_match['resource_id'] == legacy_resource['id']
-    assert 'coordinates' not in legacy_match and 'distance_meters' not in legacy_match
-    call('PUT', '/requests/' + legacy_request['id'] + '/status', {'status': 'completed'})
+    call('PUT', status_url, {'status': 'unavailable'})
     call('GET', '/requests/' + '0' * 32, expected=404)
     print('PASS: idempotent match, lifecycle, resource reservation, and error contracts', flush=True)
     print(json.dumps(evidence, indent=2), flush=True)

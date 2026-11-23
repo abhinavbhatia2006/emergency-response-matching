@@ -25,7 +25,7 @@ No single radius is optimal for every resource type or region. A smaller radius 
 
 Resources use the same coordinate object plus `availability`. Both coordinate members must be provided together. Latitude must be finite in [-90,90], longitude in [-180,180]. Zero is valid and must not be mistaken for a missing value. A matched request records `distance_meters`, including a legitimate zero distance.
 
-The dashboard requires pins for new submissions. For geographic matching, both records must have coordinates and `location` is an optional display name. Existing clients and records that have a district but omit coordinates retain exact-district matching and report no geographic distance.
+The dashboard and public creation API require pins for new submissions. For geographic matching, both records must have coordinates and `location` is an optional display name. Previously saved district-only records retain exact-district matching and report no geographic distance.
 
 No eligible resource within the radius leaves the request pending; manual matching returns 409. The worker can reconsider pending requests when resources are added or released. Distance is captured at assignment time and retained with the request's history after completion or cancellation.
 
@@ -37,4 +37,4 @@ python scripts/geographic-smoke.py --url http://127.0.0.1:8080
 
 Run this on an isolated demonstration instance. It uses public city-centre coordinates in Delhi and Mumbai, verifies cross-district asynchronous assignment and persisted distance, and rejects the remaining resource outside the radius. It creates demonstration records and closes its requests. Existing nearby transportation resources can affect candidate selection. The demonstration expects a configured radius between 5 km and 999 km.
 
-Unit tests cover known distances, zero, symmetry, poles, antipodes, the antimeridian, invalid coordinates, exact radius boundaries, deterministic ties and concurrent reservation. The ordinary deployment smoke also verifies district-only matching and HTTP 400 for an explicitly null coordinate object.
+Unit tests cover known distances, zero, symmetry, poles, antipodes, the antimeridian, invalid coordinates, exact radius boundaries, deterministic ties and concurrent reservation. The ordinary deployment smoke also verifies HTTP 400 for missing or explicitly null coordinates.

@@ -7,12 +7,8 @@ import (
 	"github.com/abhinavbhatia2006/emergency-response-matching/internal/domain"
 )
 
-// An omitted coordinate object preserves the district API. An explicit object
-// must contain both numbers, and an explicit null is invalid.
+// New records need both coordinates. Pointer fields distinguish zero from omission.
 func decodeCoordinates(raw json.RawMessage) (*domain.Coordinates, error) {
-	if len(raw) == 0 {
-		return nil, nil
-	}
 	var input struct {
 		Latitude  *float64 `json:"latitude"`
 		Longitude *float64 `json:"longitude"`
