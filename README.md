@@ -75,7 +75,7 @@ Run `docker compose stop` to stop the containers and keep the data. Resume with 
 
 ## Run on Kubernetes
 
-After the Docker setup above has built the images, run the following from the repository root in Windows PowerShell. The setup script creates or reuses a local `kind` cluster named `sahara-demo`, loads the images, deploys to the `response-matching` namespace, and waits for the workloads and persistent volume claims.
+After the Docker setup above has built the images, run the following from the repository root in Windows PowerShell. The setup script requires Docker's Linux engine to use cgroup v2. It creates or reuses a Kubernetes 1.37.0 `kind` cluster named `sahara-demo-v137`, loads the images, deploys to the `response-matching` namespace, and waits for the workloads and persistent volume claims.
 
 ```powershell
 .\scripts\11-setup-kubernetes.ps1

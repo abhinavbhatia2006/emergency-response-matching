@@ -1,7 +1,7 @@
 # Shared command checks and addresses for the numbered steps.
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
-$DemoCluster = 'sahara-demo'
+$DemoCluster = 'sahara-demo-v137'
 $DemoContext = "kind-$DemoCluster"
 $DemoNamespace = 'response-matching'
 $Kube = @('--context', $DemoContext, '-n', $DemoNamespace)

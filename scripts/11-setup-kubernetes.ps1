@@ -5,10 +5,15 @@ Invoke-ProjectStep {
     if (-not (Test-Path -LiteralPath .env)) {
         throw 'Run 01-setup-docker.ps1 first to prepare the local credentials and images.'
     }
+
+    $cgroupVersion = Invoke-Checked { docker info --format '{{.CgroupVersion}}' }
+    if ($cgroupVersion -ne '2') {
+        throw "Kubernetes 1.37 requires cgroup v2, but Docker reports '$cgroupVersion'. Use the Linux engine with cgroup v2. On Docker Desktop with WSL 2, update WSL, restart Docker Desktop, and check docker info before retrying."
+    }
+
     $clusters = @(Invoke-Checked { kind get clusters })
     if ($clusters -notcontains $DemoCluster) {
-        # Kubernetes 1.34 supports Docker engines that still use cgroup v1.
-        $nodeImage = 'kindest/node:v1.34.11@sha256:44e222ee2132dab25ff87301682f89eb82c7880ea3a1bf543bfe9708fd08d67d'
+        $nodeImage = 'kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5'
         Invoke-Checked { kind create cluster --name $DemoCluster --image $nodeImage --wait 180s }
     }
     Invoke-Checked { kubectl --context $DemoContext get nodes }

@@ -6,12 +6,12 @@ Run the numbered scripts **one at a time** from the project repository. Steps 01
 
 1. Open Docker Desktop, use Linux containers, and wait for the engine to start.
 2. Open **PowerShell** in the `emergency-response-matching` folder. From Command Prompt, you can enter `powershell` to switch shells while staying in the same folder.
-3. Verify Git, Docker Compose v2, Python 3, Go 1.25 or newer, Node.js 22, npm, kubectl, and kind. Python launched as `py -3` also works with the scripts. Kubernetes runs through kind using Docker Desktop's engine. Use the project's local demo dataset for the smoke tests. The tests create and retain sample records.
+3. Verify Git, Docker Compose v2, Python 3, Go 1.25 or newer, Node.js 22, npm, kubectl, and kind v0.33.0. Python launched as `py -3` also works with the scripts. Steps 11–15 require Docker's Linux engine to report cgroup version `2`. Use the project's local demo dataset for the smoke tests. The tests create and retain sample records.
 4. Leave Compose on `http://127.0.0.1:18080` on this machine. The scripts read the running Compose port mapping, so they also work if the repository is configured for a different local port. Kubernetes uses `http://127.0.0.1:18082`.
 
 ```powershell
 git status --short --branch
-docker info --format '{{.OSType}}'
+docker info --format '{{.OSType}} cgroup={{.CgroupVersion}}'
 docker compose version
 python --version
 go version
@@ -94,7 +94,7 @@ docker compose up -d --no-build --wait --wait-timeout 300
 
 ## 11–13. Deploy to Kubernetes and exercise the baseline
 
-Run setup in your main window. It creates or reuses the dedicated `sahara-demo` kind cluster, loads the images built in step 01, applies the manifests in `response-matching`, and waits for the controllers and eight Bound claims. New clusters use a pinned Kubernetes 1.34 node image that can start on Docker engines using cgroup v1. Run this before the presentation so the first image pulls and Pod start-up can finish.
+Run setup in your main window. It creates or reuses the dedicated `sahara-demo-v137` kind cluster with a pinned Kubernetes 1.37.0 node image, loads the images built in step 01, applies the manifests in `response-matching`, and waits for the controllers and eight Bound claims. An older `sahara-demo` cluster keeps its own data. Run this before the presentation so the first image pulls and Pod start-up can finish.
 
 ```powershell
 .\scripts\11-setup-kubernetes.ps1
@@ -133,7 +133,8 @@ If the port-forward closes when its selected Pod is removed, rerun step 12. At t
 ## Troubleshooting during rehearsal
 
 - If Docker reports the API healthy but Windows cannot open the Compose URL, check `docker compose port request-api 8080`. If the published port is correct and the Windows connection still times out, save WSL work, quit Docker Desktop, run `wsl --shutdown`, reopen Docker Desktop, and rerun step 01. This stops all running WSL distributions.
-- For Kubernetes startup issues, check `kubectl --context kind-sahara-demo -n response-matching get pods,pvc` and `kubectl --context kind-sahara-demo -n response-matching get events --sort-by=.lastTimestamp`. An `ImagePullBackOff` on a project image usually means the image tag or the kind load step needs checking. Pending claims point to storage provisioning.
+- If step 11 reports cgroup v1 on Windows with Docker Desktop's WSL 2 backend, run `wsl --update`, save any WSL work, quit Docker Desktop, run `wsl --shutdown`, and reopen Docker Desktop. Before retrying, verify `docker info --format '{{.CgroupVersion}}'` prints `2`.
+- For Kubernetes startup issues, check `kubectl --context kind-sahara-demo-v137 -n response-matching get pods,pvc` and `kubectl --context kind-sahara-demo-v137 -n response-matching get events --sort-by=.lastTimestamp`. An `ImagePullBackOff` on a project image usually means the image tag or the kind load step needs checking. Pending claims point to storage provisioning.
 - Smoke fixtures use sample geographic locations and assert the expected resource IDs. If other available resources previously created at those locations interfere with the test, run it against a dedicated rehearsal dataset or resolve those old demo fixtures.
 
 The numbered scripts are the Windows entry points. `test-common.ps1` checks native exit codes and finds deployment addresses. `smoke.py`, `geographic-smoke.py`, and `failure-smoke.py` hold the deployed test assertions. The repository's existing `kubernetes-smoke.sh` continues to run the Kubernetes CI checks.
