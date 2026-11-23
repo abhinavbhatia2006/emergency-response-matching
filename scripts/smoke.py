@@ -16,7 +16,7 @@ import uuid
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--url', default='http://127.0.0.1:8080')
+    parser.add_argument('--url', default='http://127.0.0.1:8081')
     parser.add_argument('--timeout', type=float, default=120)
     parser.add_argument('--count', type=int, default=6)
     parser.add_argument('--concurrency-only', action='store_true',

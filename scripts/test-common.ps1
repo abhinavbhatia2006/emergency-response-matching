@@ -5,7 +5,8 @@ $DemoCluster = 'sahara-demo-v137'
 $DemoContext = "kind-$DemoCluster"
 $DemoNamespace = 'response-matching'
 $Kube = @('--context', $DemoContext, '-n', $DemoNamespace)
-$KubernetesUrl = 'http://127.0.0.1:18082'
+$KubernetesPort = 8082
+$KubernetesUrl = "http://127.0.0.1:$KubernetesPort"
 
 function Invoke-ProjectStep {
     param([scriptblock]$Step)

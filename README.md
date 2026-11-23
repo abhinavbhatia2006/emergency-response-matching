@@ -37,7 +37,7 @@ cd emergency-response-matching
 .\scripts\01-setup-docker.ps1
 ```
 
-On a fresh checkout the script generates credentials in `.env` and sets the host port to `18080`. It reuses an existing `.env`, builds the images, waits for the stack to become healthy, and prints the dashboard URL.
+On first run the script generates credentials in `.env` and sets the host port to `8081`. It reuses an existing `.env`, builds the images, waits for the stack to become healthy, and prints the dashboard URL. To switch an existing checkout to the new default, set `APP_PORT=8081` in `.env` and rerun the setup.
 
 **Manual setup.** In a Bash-compatible shell, create the local configuration if it does not already exist.
 
@@ -59,7 +59,7 @@ docker compose ps
 docker compose port request-api 8080
 ```
 
-Open the address printed by that command in your browser. A fresh PowerShell setup uses [http://127.0.0.1:18080](http://127.0.0.1:18080). The manual setup uses [http://127.0.0.1:8080](http://127.0.0.1:8080) unless you set a different `APP_PORT`. Add `/readyz` to the address to check for `{"status":"ready"}`.
+Open the published address in your browser. Both setup methods default to [http://127.0.0.1:8081](http://127.0.0.1:8081). If you set a different `APP_PORT`, use that port. Add `/readyz` to the address to check for `{"status":"ready"}`.
 
 For a quick walkthrough, use **Add resource** to register an available shelter resource. Use **New request** to request shelter and place its pin near the resource. Refresh the request list to see the worker's assignment and the distance. Open **Map** to see the pins or **Shard details** to see the storage nodes.
 
@@ -67,7 +67,7 @@ For a quick walkthrough, use **Add resource** to register an available shelter r
 
 | Setting | Purpose |
 | --- | --- |
-| `APP_PORT` | Host port for the Docker Compose dashboard. The API listens on port `8080` inside the container. |
+| `APP_PORT` | Host port for the Docker Compose dashboard. Defaults to `8081`. The API listens on port `8080` inside the container. |
 | `MAX_MATCH_DISTANCE_METERS` | Maximum matching distance in Compose. Defaults to `50000` metres. See the [geographic matching guide](docs/geographic-matching.md) for the Kubernetes setting. |
 | `INTERNAL_TOKEN`, `POSTGRES_PASSWORD`, `RABBITMQ_PASSWORD` | Required credentials for service communication, PostgreSQL, and RabbitMQ. |
 
@@ -103,7 +103,7 @@ In a second PowerShell window at the repository root, keep the port-forward runn
 .\scripts\12-forward-kubernetes.ps1
 ```
 
-Open [the Kubernetes dashboard](http://127.0.0.1:18082). Run `.\scripts\13-test-kubernetes-baseline.ps1` in the first window to verify readiness and a deployed matching workflow. For direct `kind` and `kubectl` commands in Bash or PowerShell, see the [Kubernetes deployment guide](docs/kubernetes.md).
+Open [the Kubernetes dashboard](http://127.0.0.1:8082). Run `.\scripts\13-test-kubernetes-baseline.ps1` in the first window to verify readiness and a deployed matching workflow. For direct `kind` and `kubectl` commands in Bash or PowerShell, see the [Kubernetes deployment guide](docs/kubernetes.md).
 
 ## Cleanup and reset
 

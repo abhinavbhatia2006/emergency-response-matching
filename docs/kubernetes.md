@@ -1,6 +1,6 @@
-# Kubernetes deployment (Day 4)
+# Kubernetes deployment
 
-This local deployment uses namespace `response-matching` on context `kind-emergency`. The unrelated namespace `emergency` is outside this deployment. Run commands from the repository root. Prerequisites: Docker, kubectl, Python 3, a running kind cluster, and a default dynamic StorageClass (`kubectl --context kind-emergency get storageclass`). The eight claims request 8 GiB of persistent storage in total.
+This local deployment uses namespace `response-matching` in context `kind-sahara-demo-v137`. The [Windows setup](../README.md#run-on-kubernetes) creates the demo cluster. The commands below also work for manual deployment to that cluster. Run commands from the repository root. Prerequisites: Docker, kubectl, Python 3, a running kind cluster, and a default dynamic StorageClass (`kubectl --context kind-sahara-demo-v137 get storageclass`). The eight claims request 8 GiB of persistent storage in total.
 
 ## Build and load images
 
@@ -12,7 +12,7 @@ PowerShell, with kind installed:
 $targets = 'coordinator', 'storage-node', 'request-api', 'matching-worker'
 foreach ($target in $targets) {
   docker build --target $target -t "emergency-response-matching/${target}:local" .
-  kind load docker-image "emergency-response-matching/${target}:local" --name emergency
+  kind load docker-image "emergency-response-matching/${target}:local" --name sahara-demo-v137
 }
 ```
 
@@ -21,14 +21,14 @@ Bash, with kind installed:
 ```bash
 for target in coordinator storage-node request-api matching-worker; do
   docker build --target "$target" -t "emergency-response-matching/$target:local" .
-  kind load docker-image "emergency-response-matching/$target:local" --name emergency
+  kind load docker-image "emergency-response-matching/$target:local" --name sahara-demo-v137
 done
 ```
 
-If the kind CLI is absent, import into the existing node's containerd. First inspect `docker ps` and `kubectl --context kind-emergency get nodes` and use the actual node container name. For the single-node cluster named `emergency`, this is normally `emergency-control-plane`. These commands do not create a cluster:
+If the kind CLI is absent, import into the existing node's containerd. First inspect `docker ps` and `kubectl --context kind-sahara-demo-v137 get nodes` and use the actual node container name. For the single-node cluster named `sahara-demo-v137`, this is normally `sahara-demo-v137-control-plane`. These commands do not create a cluster:
 
 ```powershell
-$nodeContainer = 'emergency-control-plane'
+$nodeContainer = 'sahara-demo-v137-control-plane'
 $archive = Join-Path $env:TEMP 'response-matching-images.tar'
 docker save -o $archive emergency-response-matching/coordinator:local emergency-response-matching/storage-node:local emergency-response-matching/request-api:local emergency-response-matching/matching-worker:local
 docker cp $archive "${nodeContainer}:/tmp/response-matching-images.tar"
@@ -38,7 +38,7 @@ docker exec $nodeContainer ctr --namespace k8s.io images import /tmp/response-ma
 Unix equivalent:
 
 ```bash
-node_container=emergency-control-plane
+node_container=sahara-demo-v137-control-plane
 docker save -o /tmp/response-matching-images.tar emergency-response-matching/coordinator:local emergency-response-matching/storage-node:local emergency-response-matching/request-api:local emergency-response-matching/matching-worker:local
 docker cp /tmp/response-matching-images.tar "$node_container:/tmp/response-matching-images.tar"
 docker exec "$node_container" ctr --namespace k8s.io images import /tmp/response-matching-images.tar
@@ -57,12 +57,12 @@ python -c "import secrets; from pathlib import Path; p=Path('.env'); f=p.open('x
 The following commands work in PowerShell and Bash:
 
 ```text
-kubectl --context kind-emergency apply -f deploy/kubernetes/namespace.yaml
-kubectl --context kind-emergency -n response-matching create secret generic response-secrets --from-env-file=.env
+kubectl --context kind-sahara-demo-v137 apply -f deploy/kubernetes/namespace.yaml
+kubectl --context kind-sahara-demo-v137 -n response-matching create secret generic response-secrets --from-env-file=.env
 kubectl kustomize deploy/kubernetes
-kubectl --context kind-emergency apply --dry-run=server -k deploy/kubernetes
-kubectl --context kind-emergency apply -k deploy/kubernetes
-kubectl --context kind-emergency -n response-matching get pods,pvc,services
+kubectl --context kind-sahara-demo-v137 apply --dry-run=server -k deploy/kubernetes
+kubectl --context kind-sahara-demo-v137 apply -k deploy/kubernetes
+kubectl --context kind-sahara-demo-v137 -n response-matching get pods,pvc,services
 ```
 
 The Secret creation command is for the first installation. For subsequent deployments, reuse the existing Secret and PVCs. Changing initialization credentials in the Secret does not change credentials stored in existing PostgreSQL or RabbitMQ data directories; credential rotation requires coordinated database/broker administration and application restarts.
@@ -70,33 +70,33 @@ The Secret creation command is for the first installation. For subsequent deploy
 Wait for every workload. PowerShell:
 
 ```powershell
-kubectl --context kind-emergency -n response-matching get statefulset,deployment -o name | ForEach-Object {
-  kubectl --context kind-emergency -n response-matching rollout status $_ --timeout=300s
+kubectl --context kind-sahara-demo-v137 -n response-matching get statefulset,deployment -o name | ForEach-Object {
+  kubectl --context kind-sahara-demo-v137 -n response-matching rollout status $_ --timeout=300s
 }
 ```
 
 Bash:
 
 ```bash
-for workload in $(kubectl --context kind-emergency -n response-matching get statefulset,deployment -o name); do
-  kubectl --context kind-emergency -n response-matching rollout status "$workload" --timeout=300s
+for workload in $(kubectl --context kind-sahara-demo-v137 -n response-matching get statefulset,deployment -o name); do
+  kubectl --context kind-sahara-demo-v137 -n response-matching rollout status "$workload" --timeout=300s
 done
 ```
 
-Startup can temporarily restart application containers while databases initialize. If rollout fails, inspect `kubectl --context kind-emergency -n response-matching get events --sort-by=.lastTimestamp`, `describe pod <pod>`, and `logs <pod> --previous`. A Pending PVC usually indicates missing default storage provisioning; ImagePullBackOff for a local application image usually means it was not loaded into that node.
+Startup can temporarily restart application containers while databases initialize. If rollout fails, inspect `kubectl --context kind-sahara-demo-v137 -n response-matching get events --sort-by=.lastTimestamp`, `describe pod <pod>`, and `logs <pod> --previous`. A Pending PVC usually indicates missing default storage provisioning; ImagePullBackOff for a local application image usually means it was not loaded into that node.
 
 ## Open and verify
 
 All Services are internal ClusterIP services (database and broker Services are headless). In a dedicated terminal:
 
 ```text
-kubectl --context kind-emergency -n response-matching port-forward --address 127.0.0.1 service/request-api 18080:8080
+kubectl --context kind-sahara-demo-v137 -n response-matching port-forward --address 127.0.0.1 service/request-api 8082:8080
 ```
 
-Open [the application](http://127.0.0.1:18080). In another terminal run:
+Open [the application](http://127.0.0.1:8082). In another terminal run:
 
 ```text
-python scripts/smoke.py --url http://127.0.0.1:18080 --timeout 180
+python scripts/smoke.py --url http://127.0.0.1:8082 --timeout 180
 ```
 
 This checks the compiled UI, public create/read/status flow, and asynchronous matching, leaving uniquely named demonstration records for inspection. A Running worker alone does not prove useful work.

@@ -4,7 +4,8 @@ set -euo pipefail
 
 cluster=response-matching-ci
 kubeconfig=$(mktemp)
-api=http://127.0.0.1:18082
+api_port=8082
+api="http://127.0.0.1:$api_port"
 kube=(kubectl --kubeconfig "$kubeconfig" --context "kind-$cluster")
 project=("${kube[@]}" -n response-matching)
 created=false
@@ -43,7 +44,7 @@ for workload in $("${project[@]}" get deployment,statefulset -o name); do
   "${project[@]}" rollout status "$workload" --timeout=240s
 done
 
-"${project[@]}" port-forward service/request-api 18082:8080 &
+"${project[@]}" port-forward service/request-api "${api_port}:8080" &
 forward=$!
 curl --fail --silent --show-error --retry 20 --retry-connrefused --retry-delay 1 "$api/readyz"
 

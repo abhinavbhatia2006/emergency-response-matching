@@ -6,7 +6,7 @@ Invoke-ProjectStep {
     if ($engine -ne 'linux') { throw 'Switch Docker Desktop to Linux containers before continuing.' }
 
     if (-not (Test-Path -LiteralPath .env)) {
-        Write-Host 'Creating local demo credentials and selecting host port 18080.'
+        Write-Host 'Creating local demo credentials and selecting host port 8081.'
         # The x mode creates the file exclusively and protects an existing .env.
         $createEnvironment = @'
 from pathlib import Path
@@ -16,7 +16,7 @@ keys = ('INTERNAL_TOKEN', 'POSTGRES_PASSWORD', 'RABBITMQ_PASSWORD')
 with Path('.env').open('x', encoding='ascii') as config:
     for key in keys:
         config.write(key + '=' + token_hex(32) + '\n')
-    config.write('APP_PORT=18080\n')
+    config.write('APP_PORT=8081\n')
 '@
         Invoke-Python @('-c', $createEnvironment)
     }

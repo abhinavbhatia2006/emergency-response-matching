@@ -32,7 +32,7 @@ No eligible resource within the radius leaves the request pending; manual matchi
 ## Verification
 
 ```sh
-python scripts/geographic-smoke.py --url http://127.0.0.1:8080
+python scripts/geographic-smoke.py --url http://127.0.0.1:8081
 ```
 
 Run this on an isolated demonstration instance. It uses public city-centre coordinates in Delhi and Mumbai, verifies cross-district asynchronous assignment and persisted distance, and rejects the remaining resource outside the radius. It creates demonstration records and closes its requests. Existing nearby transportation resources can affect candidate selection. The demonstration expects a configured radius between 5 km and 999 km.

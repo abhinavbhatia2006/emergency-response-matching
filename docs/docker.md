@@ -13,10 +13,10 @@ docker compose -f compose.yml config --quiet
 docker compose -f compose.yml build
 docker compose -f compose.yml up -d --wait --wait-timeout 300
 docker compose -f compose.yml ps
-python scripts/smoke.py --url http://127.0.0.1:8080
+python scripts/smoke.py --url http://127.0.0.1:8081
 ```
 
-Open [the dashboard](http://127.0.0.1:8080). Set `APP_PORT` in `.env` to change the local port, then use that port for the browser and smoke check. Only the API is published, bound to `127.0.0.1`; PostgreSQL, RabbitMQ, coordinator and shard ports remain on the Compose network. Container listeners bind `0.0.0.0` so peer services can reach them.
+Open [the dashboard](http://127.0.0.1:8081). Set `APP_PORT` in `.env` to change the local port, then use that port for the browser and smoke check. Run `docker compose -f compose.yml port request-api 8080` to see the actual host port. Compose publishes the API on `127.0.0.1` and uses its internal network for PostgreSQL, RabbitMQ, the coordinator, and the storage nodes. Container listeners bind `0.0.0.0` so peer services can reach them.
 
 ## Images and topology
 

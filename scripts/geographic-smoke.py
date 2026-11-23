@@ -14,7 +14,7 @@ import uuid
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--url', default='http://127.0.0.1:8080')
+    parser.add_argument('--url', default='http://127.0.0.1:8081')
     parser.add_argument('--timeout', type=float, default=180)
     args = parser.parse_args()
     if args.timeout <= 0:

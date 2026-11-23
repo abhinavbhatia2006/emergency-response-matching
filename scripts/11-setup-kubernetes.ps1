@@ -15,6 +15,35 @@ Invoke-ProjectStep {
     if ($clusters -notcontains $DemoCluster) {
         $nodeImage = 'kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5'
         Invoke-Checked { kind create cluster --name $DemoCluster --image $nodeImage --wait 180s }
+    } else {
+        # kind lists existing nodes even when their containers are stopped.
+        $nodes = @(Invoke-Checked { kind get nodes --name $DemoCluster })
+        if (-not $nodes.Count) { throw "No node containers found for kind cluster $DemoCluster." }
+        foreach ($node in $nodes) {
+            $state = Invoke-Checked { docker container inspect --format '{{.State.Status}}' $node }
+            if ($state -in 'created', 'exited') {
+                Write-Host "Starting kind node $node."
+                Invoke-Checked { docker start $node }
+            }
+        }
+
+        Get-Command kubectl -ErrorAction Stop | Out-Null
+        Write-Host "Waiting for the Kubernetes API in $DemoCluster."
+        $deadline = (Get-Date).AddSeconds(180)
+        do {
+            try {
+                $response = @(kubectl --context $DemoContext --request-timeout=5s get --raw=/readyz 2>&1)
+                $apiReady = $LASTEXITCODE -eq 0
+                $lastProbe = $response -join ' '
+            } catch {
+                $apiReady = $false
+                $lastProbe = $_.Exception.Message
+            }
+            if (-not $apiReady) { Start-Sleep -Seconds 2 }
+        } while (-not $apiReady -and (Get-Date) -lt $deadline)
+        if (-not $apiReady) { throw "Kubernetes API $DemoContext did not become ready within 180 seconds. $lastProbe" }
+
+        Invoke-Checked { kubectl --context $DemoContext wait --for=condition=Ready node --all --timeout=180s }
     }
     Invoke-Checked { kubectl --context $DemoContext get nodes }
     Invoke-Checked { kubectl --context $DemoContext get storageclass }
